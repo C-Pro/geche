@@ -1,6 +1,6 @@
 # Geche (generic cache)
 
-Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface for values (`AnyCache`) (244ns vs 429ns), but slower than implementations that use concrete types (`StringCache`) at 236ns and skip on thread safety (`UnsafeCache`) at 429ns.
+Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface for values (`AnyCache`) (244ns vs 429ns), but slower than implementations that use concrete types (`StringCache`) at 236ns and skip on thread safety (`UnsafeCache`) at 210ns.
 
 ```shell
 $ GOGC=off go test -count=3 -benchtime=1s -bench . .
