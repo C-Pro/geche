@@ -1,5 +1,7 @@
 # Geche (generic cache)
 
+[![Test](https://github.com/C-Pro/geche/actions/workflows/build.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/build.yml)
+
 Collection of generic cache implementations for cases when you don't want a lot of `interface{}` values in your process memory.
 
 * `MapCache` is a very simple map-based thread-safe cache.
