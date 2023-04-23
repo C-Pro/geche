@@ -1,8 +1,10 @@
 package geche
 
 import (
+	"context"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func benchmarkSet(c Geche[string, string], b *testing.B) {
@@ -12,6 +14,9 @@ func benchmarkSet(c Geche[string, string], b *testing.B) {
 }
 
 func BenchmarkSet(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	tab := []struct {
 		name string
 		imp  Geche[string, string]
@@ -27,6 +32,10 @@ func BenchmarkSet(b *testing.B) {
 		{
 			"UnsafeCache",
 			newUnsafeCache(),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute),
 		},
 	}
 	for _, c := range tab {
