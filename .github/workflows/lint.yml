@@ -1,0 +1,58 @@
+
+name: 'Static analysis'
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gitleaks:
+    name: GitLeaks credentials scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 10
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: GitLeaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        #GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE}}
+  semgrep:
+    name: Semgrep scan
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep
+    if: (github.actor != 'dependabot[bot]')
+    steps:
+      - uses: actions/checkout@v3
+      - run: semgrep
+        env:
+           SEMGREP_RULES: p/default # more at semgrep.dev/explore
+  osv-scanner:
+    runs-on: ubuntu-latest
+    container: ghcr.io/google/osv-scanner
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: Scan the code
+      run: /osv-scanner -r --skip-git . || if [ $? -eq 128 ]; then true; else exit $?; fi
+  golangci-lint:
+    name: Run golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - uses: actions/setup-go@v3
+      with:
+        go-version: "1.20"
+    - uses: golangci/golangci-lint-action@v3
+      with:
+          version: v1.51
