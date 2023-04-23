@@ -25,28 +25,28 @@ func zero[K comparable]() K {
 
 // MapTTLCache is the thread-safe map-based cache with TTL support.
 type MapTTLCache[T any, K comparable] struct {
-	data            map[K]record[T, K]
-	mux             sync.RWMutex
-	ttl             time.Duration
-	now             func() time.Time
-	tail            K
-	head            K
-	zero            K
+	data map[K]record[T, K]
+	mux  sync.RWMutex
+	ttl  time.Duration
+	now  func() time.Time
+	tail K
+	head K
+	zero K
 }
 
 func NewMapTTLCache[T any, K comparable](
 	ctx context.Context,
 	ttl time.Duration,
 	cleanupInterval time.Duration,
-	) *MapTTLCache[T, K] {
+) *MapTTLCache[T, K] {
 	if cleanupInterval == 0 {
 		cleanupInterval = defaultCleanupInterval
 	}
 	c := MapTTLCache[T, K]{
-		data:            make(map[K]record[T, K]),
-		ttl:             ttl,
-		now:             time.Now,
-		zero:            zero[K](), // cache zero value for comparisons.
+		data: make(map[K]record[T, K]),
+		ttl:  ttl,
+		now:  time.Now,
+		zero: zero[K](), // cache zero value for comparisons.
 	}
 
 	go func(ctx context.Context) {
@@ -57,7 +57,7 @@ func NewMapTTLCache[T any, K comparable](
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				c.cleanup()
+				_ = c.cleanup()
 			}
 		}
 	}(ctx)

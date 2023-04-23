@@ -63,8 +63,8 @@ func TestTTLSequence(t *testing.T) {
 		t.Errorf("expected sequence %q, got %q", expected, s)
 	}
 
-	c.Del("0")
-	c.Del("5")
+	_ = c.Del("0")
+	_ = c.Del("5")
 	c.Set("7", "7")
 
 	s = ""
