@@ -11,7 +11,7 @@ func TestTTL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Second)
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Second)
 	c.Set("key", "value")
 	ts := time.Now()
 
@@ -48,7 +48,7 @@ func TestTTLSequence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Second)
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Second)
 	for i := 0; i < 10; i++ {
 		s := strconv.Itoa(i)
 		c.Set(s, s)
@@ -82,13 +82,7 @@ func TestTTLCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	oldValue := cleanupInterval
-	cleanupInterval = time.Millisecond * 5
-	defer func() {
-		cleanupInterval = oldValue
-	}()
-
-	c := NewMapTTLCache[string, string](ctx, time.Millisecond)
+	c := NewMapTTLCache[string, string](ctx, time.Millisecond, time.Millisecond*5)
 	c.Set("key", "value")
 
 	// Check we can get the value.
@@ -118,13 +112,7 @@ func TestTTLScenario(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	oldValue := cleanupInterval
-	cleanupInterval = time.Millisecond * 5
-	defer func() {
-		cleanupInterval = oldValue
-	}()
-
-	c := NewMapTTLCache[string, string](ctx, time.Millisecond)
+	c := NewMapTTLCache[string, string](ctx, time.Millisecond, time.Millisecond*5)
 	for i := 0; i < 10; i++ {
 		s := strconv.Itoa(i)
 		c.Set(s, s)

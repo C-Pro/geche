@@ -35,7 +35,7 @@ func BenchmarkSet(b *testing.B) {
 		},
 		{
 			"MapTTLCache",
-			NewMapTTLCache[string, string](ctx, time.Minute),
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
 	}
 	for _, c := range tab {

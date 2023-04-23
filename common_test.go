@@ -110,7 +110,7 @@ func TestCommon(t *testing.T) {
 		factory func() Geche[string, string]
 	}{
 		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
-		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute) }},
+		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute, time.Minute) }},
 	}
 
 	tab := []struct {
