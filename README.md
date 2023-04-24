@@ -6,6 +6,7 @@ Collection of generic cache implementations for cases when you don't want a lot 
 
 * `MapCache` is a very simple map-based thread-safe cache.
 * `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire).
+* `RingBuffer` is a predefined size cache, that allocates all memory from the start and can not grow above it.
 
 ## Set benchmark
 

@@ -9,7 +9,7 @@ import (
 // defaultCleanupInterval controls how often cache will purge obsolete values.
 const defaultCleanupInterval = time.Second
 
-type record[T any, K comparable] struct {
+type ttlRec[T any, K comparable] struct {
 	// linked list to maintain order
 	prev      K
 	next      K
@@ -17,15 +17,15 @@ type record[T any, K comparable] struct {
 	timestamp time.Time
 }
 
-// zero returns zero value for type K.
-func zero[K comparable]() K {
-	var z K
+// zero returns zero value for the type T.
+func zero[T any]() T {
+	var z T
 	return z
 }
 
 // MapTTLCache is the thread-safe map-based cache with TTL support.
 type MapTTLCache[T any, K comparable] struct {
-	data map[K]record[T, K]
+	data map[K]ttlRec[T, K]
 	mux  sync.RWMutex
 	ttl  time.Duration
 	now  func() time.Time
@@ -43,7 +43,7 @@ func NewMapTTLCache[T any, K comparable](
 		cleanupInterval = defaultCleanupInterval
 	}
 	c := MapTTLCache[T, K]{
-		data: make(map[K]record[T, K]),
+		data: make(map[K]ttlRec[T, K]),
 		ttl:  ttl,
 		now:  time.Now,
 		zero: zero[K](), // cache zero value for comparisons.
@@ -69,7 +69,7 @@ func (c *MapTTLCache[T, K]) Set(key K, value T) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	val := record[T, K]{
+	val := ttlRec[T, K]{
 		value:     value,
 		prev:      c.tail,
 		timestamp: c.now(),
