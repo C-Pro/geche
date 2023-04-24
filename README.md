@@ -2,42 +2,49 @@
 
 [![Test](https://github.com/C-Pro/geche/actions/workflows/build.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/build.yml)
 
-Collection of generic cache implementations for cases when you don't want a lot of `interface{}` values in your process memory.
+Collection of generic cache implementations in Go for cases when you don't want a lot of `interface{}` values in your process memory.
+Implementations are as simple as possible to be predictable in max latency, memory allocation and concurrency impact (writes lock reads and are serialized with other writes).
 
-* `MapCache` is a very simple map-based thread-safe cache.
-* `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire).
-* `RingBuffer` is a predefined size cache, that allocates all memory from the start and can not grow above it.
+* `MapCache` is a very simple map-based thread-safe cache, that is not limited from growing. Can be used when you have relatively small number of distinct keys that does not grow significantly, and you do not need the values to expire automatically. E.g. if your keys are country codes, timezones etc, this cache type is ok to use.
+* `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire). If you don't want to read value from cache that is older then some threshold (e.g. 1 sec), you set this TTL when initializing the cache object and obsolete rows will be removed from cache automatically.
+* `RingBuffer` is a predefined size cache that allocates all memory from the start and will not grow above it. It keeps constant size by overwriting the oldest values in the cache with new ones. Use this cache when you need speed and fixed memory footprint, and your key cardinality is predictable (or you are ok with having cache misses if cardinality suddenly grows above your cache size).
 
-## Set benchmark
 
-This is a simple benchmark the purpose of which is to understand the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.
+## Benchmarks
 
-TL/DR: generics are faster than `interface{}` but slower than hardcoded type implementation.
+Test suite contains a couple of benchmarks to compare the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.
 
-Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface for values (`AnyCache`) (244ns vs 429ns), but slower than implementations that use concrete types (`StringCache`) at 236ns and skip on thread safety (`UnsafeCache`) at 210ns.
-Generic `MapTTLCache` is on par with `AnyCache` but it is to be expected as it does more work keeping linked list for fast invalidation.
+TL/DR: generics are faster than `interface{}` but slower than hardcoded type implementation. Ring buffer is 2x+ faster then map-based TTL cache.
+
+Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface to store any type of values (`AnyCache`), but slower than implementations that use concrete types (`StringCache`) and skip on thread safety (`UnsafeCache`).
+Generic `MapTTLCache` is on par with `AnyCache` but it is to be expected as it does more work keeping linked list for fast invalidation. `RingBuffer` performs the best because all the space it needs is preallocated during the initialization, and actual cache size is limited.
+
+There are two types of benchmarks:
+* `BenchmarkSet` only times the `Set` operation that allocates all the memory, and usually is the most resource intensive.
+* `BenchmarkEverything` repeatedly does one of three operations (Get/Set/Del). The probability for each type of operation to be executed is 0.9/0.05/0.05 respectively. Each operation is executed on randomly generated key, there are totally 1 million distinct keys, so total cache size will be limited too.
+
+Note that `stringCache`, `unsafeCache`, `anyCache` implementations are unexported. These implementations exist only to compare Go generic implementation with other approaches.
+
+The results below are not to be treated as absolute values. Actual cache operation latency will depend on many variables such as CPU speed, key cardinality, number of concurrent operations, whether the allocation happen during the operation or underlying structure already has the allocated space and so on.
 
 ```shell
-$ GOGC=off go test -count=3 -benchtime=1s -bench . .
+$ go test -count=1 -benchtime=5s -benchmem -bench . .
 goos: linux
 goarch: amd64
 pkg: geche
 cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz
-BenchmarkSet/MapCache-8                  4255777               473.4 ns/op
-BenchmarkSet/MapCache-8                  4439835               291.1 ns/op
-BenchmarkSet/MapCache-8                  4596613               289.4 ns/op
-BenchmarkSet/StringCache-8               2318277               437.1 ns/op
-BenchmarkSet/StringCache-8               4610161               457.6 ns/op
-BenchmarkSet/StringCache-8               4484840               281.8 ns/op
-BenchmarkSet/UnsafeCache-8               2525283               398.1 ns/op
-BenchmarkSet/UnsafeCache-8               5006996               419.0 ns/op
-BenchmarkSet/UnsafeCache-8               5198524               265.2 ns/op
-BenchmarkSet/MapTTLCache-8               2424573               736.7 ns/op
-BenchmarkSet/MapTTLCache-8               2590296               520.2 ns/op
-BenchmarkSet/MapTTLCache-8               2538258               522.9 ns/op
-BenchmarkSet/AnyCache-8                  2526578               520.9 ns/op
-BenchmarkSet/AnyCache-8                  2427645               523.8 ns/op
-BenchmarkSet/AnyCache-8                  2410173               520.5 ns/op
+BenchmarkSet/MapCache-8         24601024               245.0 ns/op             7 B/op          0 allocs/op
+BenchmarkSet/StringCache-8              24591309               242.6 ns/op             7 B/op          0 allocs/op
+BenchmarkSet/UnsafeCache-8              28177236               211.6 ns/op             7 B/op          0 allocs/op
+BenchmarkSet/MapTTLCache-8              11912029               501.8 ns/op             7 B/op          0 allocs/op
+BenchmarkSet/RingBuffer-8               33171223               186.5 ns/op            10 B/op          1 allocs/op
+BenchmarkSet/AnyCache-8                 24146725               248.4 ns/op            14 B/op          1 allocs/op
+BenchmarkEverything/MapCache-8          32745301               315.2 ns/op            10 B/op          1 allocs/op
+BenchmarkEverything/StringCache-8       42918726               323.4 ns/op             9 B/op          1 allocs/op
+BenchmarkEverything/UnsafeCache-8       47435004               312.6 ns/op             9 B/op          1 allocs/op
+BenchmarkEverything/MapTTLCache-8       36476836               413.7 ns/op            13 B/op          1 allocs/op
+BenchmarkEverything/RingBuffer-8        41306090               162.0 ns/op             8 B/op          1 allocs/op
+BenchmarkEverything/AnyCache-8          43765518               300.4 ns/op             9 B/op          1 allocs/op
 PASS
-ok      geche   41.525s
+ok      geche   132.965s
 ```

@@ -8,15 +8,17 @@ import (
 	"time"
 )
 
+const keyCardinality = 1000000
+
 func benchmarkSet(c Geche[string, string], b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		c.Set(strconv.Itoa(i), strconv.Itoa(i))
+		c.Set(strconv.Itoa(i % keyCardinality), "value")
 	}
 }
 
 func benchmarkFuzz(c Geche[string, string], b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		key := strconv.Itoa(rand.Int())
+		key := strconv.Itoa(rand.Intn(keyCardinality))
 		r := rand.Float64()
 		switch {
 		case r < 0.9:
@@ -67,7 +69,7 @@ func BenchmarkSet(b *testing.B) {
 	b.Run("AnyCache", func(b *testing.B) {
 		c := newAnyCache()
 		for i := 0; i < b.N; i++ {
-			c.Set(strconv.Itoa(i), strconv.Itoa(i))
+			c.Set(strconv.Itoa(i % keyCardinality), "value")
 		}
 	})
 }
@@ -112,7 +114,7 @@ func BenchmarkEverything(b *testing.B) {
 	b.Run("AnyCache", func(b *testing.B) {
 		c := newAnyCache()
 		for i := 0; i < b.N; i++ {
-			key := strconv.Itoa(rand.Int())
+			key := strconv.Itoa(rand.Intn(keyCardinality))
 			r := rand.Float64()
 			switch {
 			case r < 0.9:
