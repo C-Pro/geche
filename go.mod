@@ -1,3 +1,3 @@
-module geche
+module github.com/c-pro/geche
 
 go 1.20
