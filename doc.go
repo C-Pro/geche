@@ -6,8 +6,8 @@ import "errors"
 
 var ErrNotFound = errors.New("not found")
 
-type Geche[K comparable, T any] interface {
-	Set(K, T)
-	Get(K) (T, error)
+type Geche[K comparable, V any] interface {
+	Set(K, V)
+	Get(K) (V, error)
 	Del(K) error
 }
