@@ -6,25 +6,25 @@ import (
 
 // MapCache is the simplest thread-safe map-based cache implementation.
 // Does not have any limits or TTL, can grow indefinetly.
-type MapCache[T any, K comparable] struct {
+type MapCache[K comparable, T any] struct {
 	data map[K]T
 	mux  sync.RWMutex
 }
 
-func NewMapCache[T any, K comparable]() *MapCache[T, K] {
-	return &MapCache[T, K]{
+func NewMapCache[K comparable, T any]() *MapCache[K, T] {
+	return &MapCache[K, T]{
 		data: make(map[K]T),
 	}
 }
 
-func (c *MapCache[T, K]) Set(key K, value T) {
+func (c *MapCache[K, T]) Set(key K, value T) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
 	c.data[key] = value
 }
 
-func (c *MapCache[T, K]) Get(key K) (T, error) {
+func (c *MapCache[K, T]) Get(key K) (T, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
@@ -36,7 +36,7 @@ func (c *MapCache[T, K]) Get(key K) (T, error) {
 	return v, nil
 }
 
-func (c *MapCache[T, K]) Del(key K) error {
+func (c *MapCache[K, T]) Del(key K) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 

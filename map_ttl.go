@@ -9,7 +9,7 @@ import (
 // defaultCleanupInterval controls how often cache will purge obsolete values.
 const defaultCleanupInterval = time.Second
 
-type ttlRec[T any, K comparable] struct {
+type ttlRec[K comparable, T any] struct {
 	// linked list to maintain order
 	prev      K
 	next      K
@@ -24,8 +24,8 @@ func zero[T any]() T {
 }
 
 // MapTTLCache is the thread-safe map-based cache with TTL support.
-type MapTTLCache[T any, K comparable] struct {
-	data map[K]ttlRec[T, K]
+type MapTTLCache[K comparable, T any] struct {
+	data map[K]ttlRec[K, T]
 	mux  sync.RWMutex
 	ttl  time.Duration
 	now  func() time.Time
@@ -34,16 +34,16 @@ type MapTTLCache[T any, K comparable] struct {
 	zero K
 }
 
-func NewMapTTLCache[T any, K comparable](
+func NewMapTTLCache[K comparable, T any](
 	ctx context.Context,
 	ttl time.Duration,
 	cleanupInterval time.Duration,
-) *MapTTLCache[T, K] {
+) *MapTTLCache[K, T] {
 	if cleanupInterval == 0 {
 		cleanupInterval = defaultCleanupInterval
 	}
-	c := MapTTLCache[T, K]{
-		data: make(map[K]ttlRec[T, K]),
+	c := MapTTLCache[K, T]{
+		data: make(map[K]ttlRec[K, T]),
 		ttl:  ttl,
 		now:  time.Now,
 		zero: zero[K](), // cache zero value for comparisons.
@@ -65,11 +65,11 @@ func NewMapTTLCache[T any, K comparable](
 	return &c
 }
 
-func (c *MapTTLCache[T, K]) Set(key K, value T) {
+func (c *MapTTLCache[K, T]) Set(key K, value T) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	val := ttlRec[T, K]{
+	val := ttlRec[K, T]{
 		value:     value,
 		prev:      c.tail,
 		timestamp: c.now(),
@@ -102,7 +102,7 @@ func (c *MapTTLCache[T, K]) Set(key K, value T) {
 	c.data[key] = val
 }
 
-func (c *MapTTLCache[T, K]) Get(key K) (T, error) {
+func (c *MapTTLCache[K, T]) Get(key K) (T, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
@@ -118,7 +118,7 @@ func (c *MapTTLCache[T, K]) Get(key K) (T, error) {
 	return v.value, nil
 }
 
-func (c *MapTTLCache[T, K]) Del(key K) error {
+func (c *MapTTLCache[K, T]) Del(key K) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -153,7 +153,7 @@ func (c *MapTTLCache[T, K]) Del(key K) error {
 }
 
 // cleanup removes outdated records.
-func (c *MapTTLCache[T, K]) cleanup() error {
+func (c *MapTTLCache[K, T]) cleanup() error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 

@@ -4,27 +4,27 @@ import (
 	"sync"
 )
 
-type bufferRec[T any, K comparable] struct {
+type bufferRec[K comparable, T any] struct {
 	value T
-	key K
+	key   K
 }
 
 // RingBuffer cache preallocates a fixed number of elements and
 // starts overwriting oldest values when this number is reached.
 // The idea is to reduce allocations and GC pressure while having
 // fixed memory footprint (does not grow).
-type RingBuffer[T any, K comparable] struct {
-	data []bufferRec[T, K]
+type RingBuffer[K comparable, T any] struct {
+	data  []bufferRec[K, T]
 	index map[K]int
-	head int
+	head  int
 	zeroK K
 	zeroT T
-	mux  sync.RWMutex
+	mux   sync.RWMutex
 }
 
-func NewRingBuffer[T any, K comparable](size int) *RingBuffer[T, K] {
-	return &RingBuffer[T, K]{
-		data: make([]bufferRec[T, K], size),
+func NewRingBuffer[K comparable, T any](size int) *RingBuffer[K, T] {
+	return &RingBuffer[K, T]{
+		data:  make([]bufferRec[K, T], size),
 		index: make(map[K]int, size),
 		zeroK: zero[K](),
 		zeroT: zero[T](),
@@ -32,7 +32,7 @@ func NewRingBuffer[T any, K comparable](size int) *RingBuffer[T, K] {
 }
 
 // Set adds value to the ring buffer and the index
-func (c *RingBuffer[T, K]) Set(key K, value T) {
+func (c *RingBuffer[K, T]) Set(key K, value T) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -43,12 +43,12 @@ func (c *RingBuffer[T, K]) Set(key K, value T) {
 		delete(c.index, old.key)
 	}
 
-	c.data[c.head] = bufferRec[T, K]{value, key}
+	c.data[c.head] = bufferRec[K, T]{value, key}
 	c.index[key] = c.head
 	c.head = (c.head + 1) % len(c.data)
 }
 
-func (c *RingBuffer[T, K]) Get(key K) (T, error) {
+func (c *RingBuffer[K, T]) Get(key K) (T, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
@@ -60,7 +60,7 @@ func (c *RingBuffer[T, K]) Get(key K) (T, error) {
 	return c.data[i].value, nil
 }
 
-func (c *RingBuffer[T, K]) Del(key K) error {
+func (c *RingBuffer[K, T]) Del(key K) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
