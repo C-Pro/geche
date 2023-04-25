@@ -48,7 +48,7 @@ func TestTTLSequence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Second, time.Second)
+	c := NewMapTTLCache[string, string](ctx, time.Second, 0)
 	for i := 0; i < 10; i++ {
 		s := strconv.Itoa(i)
 		c.Set(s, s)
