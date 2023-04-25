@@ -136,7 +136,7 @@ func BenchmarkEverything(b *testing.B) {
 		},
 		{
 			"RingBuffer",
-			NewRingBuffer[string, string](10000),
+			NewRingBuffer[string, string](1000000),
 		},
 	}
 
