@@ -39,9 +39,10 @@ func genTestData(N int) []testCase {
 	return d
 }
 
-func benchmarkSet(c Geche[string, string], b *testing.B) {
+
+func benchmarkSet(c Geche[string, string], testData []testCase, b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		c.Set(strconv.Itoa(i%keyCardinality), "value")
+		c.Set(testData[i%len(testData)].key, "value")
 	}
 }
 
@@ -88,19 +89,22 @@ func BenchmarkSet(b *testing.B) {
 		},
 		{
 			"RingBuffer",
-			NewRingBuffer[string, string](10000),
+			NewRingBuffer[string, string](1000000),
 		},
 	}
+
+	data := genTestData(10_000_000)
+	b.ResetTimer()
 	for _, c := range tab {
 		b.Run(c.name, func(b *testing.B) {
-			benchmarkSet(c.imp, b)
+			benchmarkSet(c.imp, data, b)
 		})
 	}
 
 	b.Run("AnyCache", func(b *testing.B) {
 		c := newAnyCache()
 		for i := 0; i < b.N; i++ {
-			c.Set(strconv.Itoa(i%keyCardinality), "value")
+			c.Set(data[i%len(data)].key, "value")
 		}
 	})
 }

@@ -43,7 +43,8 @@ func (c *RingBuffer[K, V]) Set(key K, value V) {
 		delete(c.index, old.key)
 	}
 
-	c.data[c.head] = bufferRec[K, V]{value, key}
+	c.data[c.head].key = key
+	c.data[c.head].value = value
 	c.index[key] = c.head
 	c.head = (c.head + 1) % len(c.data)
 }
