@@ -10,23 +10,54 @@ import (
 
 const keyCardinality = 1000000
 
-func benchmarkSet(c Geche[string, string], b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		c.Set(strconv.Itoa(i % keyCardinality), "value")
-	}
+type testCase struct {
+	key string
+	op  int
 }
 
-func benchmarkFuzz(c Geche[string, string], b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		key := strconv.Itoa(rand.Intn(keyCardinality))
+const (
+	OPGet = iota
+	OPSet
+	OPDel
+)
+
+func genTestData(N int) []testCase {
+	d := make([]testCase, N)
+	for i := range d {
+		d[i].key = strconv.Itoa(rand.Intn(keyCardinality))
 		r := rand.Float64()
 		switch {
 		case r < 0.9:
-			_, _ = c.Get(key)
+			d[i].op = OPGet
 		case r >= 0.9 && r < 0.95:
-			_ = c.Del(key)
+			d[i].op = OPSet
 		case r >= 0.95:
-			c.Set(key, "value")
+			d[i].op = OPDel
+		}
+	}
+
+	return d
+}
+
+func benchmarkSet(c Geche[string, string], b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		c.Set(strconv.Itoa(i%keyCardinality), "value")
+	}
+}
+
+func benchmarkFuzz(
+	c Geche[string, string],
+	testData []testCase,
+	b *testing.B,
+) {
+	for i := 0; i < b.N; i++ {
+		switch testData[i%len(testData)].op {
+		case OPGet:
+			_, _ = c.Get(testData[i%len(testData)].key)
+		case OPSet:
+			c.Set(testData[i%len(testData)].key, "value")
+		case OPDel:
+			_ = c.Del(testData[i%len(testData)].key)
 		}
 	}
 }
@@ -69,7 +100,7 @@ func BenchmarkSet(b *testing.B) {
 	b.Run("AnyCache", func(b *testing.B) {
 		c := newAnyCache()
 		for i := 0; i < b.N; i++ {
-			c.Set(strconv.Itoa(i % keyCardinality), "value")
+			c.Set(strconv.Itoa(i%keyCardinality), "value")
 		}
 	})
 }
@@ -105,9 +136,12 @@ func BenchmarkEverything(b *testing.B) {
 			NewRingBuffer[string, string](10000),
 		},
 	}
+
+	data := genTestData(10_000_000)
+	b.ResetTimer()
 	for _, c := range tab {
 		b.Run(c.name, func(b *testing.B) {
-			benchmarkFuzz(c.imp, b)
+			benchmarkFuzz(c.imp, data, b)
 		})
 	}
 
