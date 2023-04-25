@@ -1,6 +1,6 @@
 # Geche (generic cache)
 
-[![Workflow status](https://github.com/C-Pro/geche/actions/workflows/build.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/build.yml)
+[![Workflow status](https://github.com/C-Pro/geche/actions/workflows/test.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/test.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/c-pro/geche)](https://goreportcard.com/report/github.com/c-pro/geche)
 [![GoDoc](https://pkg.go.dev/badge/mod/github.com/c-pro/geche)](https://pkg.go.dev/mod/github.com/c-pro/geche)
 [![Coverage Status](https://codecov.io/gh/c-pro/geche/branch/main/graph/badge.svg)](https://codecov.io/gh/c-pro/geche)
