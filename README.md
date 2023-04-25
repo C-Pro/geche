@@ -1,6 +1,9 @@
 # Geche (generic cache)
 
-[![Test](https://github.com/C-Pro/geche/actions/workflows/build.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/build.yml)
+[![Workflow status](https://github.com/C-Pro/geche/actions/workflows/build.yml/badge.svg)](https://github.com/C-Pro/geche/actions/workflows/build.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/c-pro/geche)](https://goreportcard.com/report/github.com/c-pro/geche)
+[![GoDoc](https://pkg.go.dev/badge/mod/github.com/c-pro/geche)](https://pkg.go.dev/mod/github.com/c-pro/geche)
+[![Coverage Status](https://codecov.io/gh/c-pro/geche/branch/main/graph/badge.svg)](https://codecov.io/gh/c-pro/geche)
 
 Collection of generic cache implementations in Go focused on simplicity. No clever tricks, no dependencies, no gazillion of configuration options.
 Implementations are as simple as possible to be predictable in max latency, memory allocation and concurrency impact (writes lock reads and are serialized with other writes).
@@ -99,4 +102,4 @@ PASS
 ok      cache_bench     496.390s
 ```
 
-Concurrent comparison benchmark is located in a separate repository to avoid pulling unnecessary dependencies in the library.
+Concurrent comparison benchmark is located in a [separate repository](https://github.com/C-Pro/cache-benchmarks) to avoid pulling unnecessary dependencies in the library.

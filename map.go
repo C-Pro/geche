@@ -5,7 +5,8 @@ import (
 )
 
 // MapCache is the simplest thread-safe map-based cache implementation.
-// Does not have any limits or TTL, can grow indefinetly.
+// Does not have any limits or TTL, can grow indefinitely.
+// Should be used when number of distinct keys in the cache is fixed or grows very slow.
 type MapCache[K comparable, V any] struct {
 	data map[K]V
 	mux  sync.RWMutex
@@ -24,6 +25,7 @@ func (c *MapCache[K, V]) Set(key K, value V) {
 	c.data[key] = value
 }
 
+// Get returns ErrNotFound if key does not exist in the cache.
 func (c *MapCache[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()

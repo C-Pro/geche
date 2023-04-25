@@ -39,7 +39,6 @@ func genTestData(N int) []testCase {
 	return d
 }
 
-
 func benchmarkSet(c Geche[string, string], testData []testCase, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		c.Set(testData[i%len(testData)].key, "value")

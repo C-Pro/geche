@@ -23,7 +23,8 @@ func zero[T any]() T {
 	return z
 }
 
-// MapTTLCache is the thread-safe map-based cache with TTL support.
+// MapTTLCache is the thread-safe map-based cache with TTL cache invalidation support.
+// MapTTLCache uses double linked list to maintain FIFO order of inserted values.
 type MapTTLCache[K comparable, V any] struct {
 	data map[K]ttlRec[K, V]
 	mux  sync.RWMutex
@@ -34,6 +35,10 @@ type MapTTLCache[K comparable, V any] struct {
 	zero K
 }
 
+// NewMapTTLCache creates MapTTLCache instance and spawns background
+// cleanup goroutine, that periodically removes outdated records.
+// Cleanup goroutine will run cleanup once in cleanupInterval until ctx is canceled.
+// Each record in the cache is valid for ttl duration since it was Set.
 func NewMapTTLCache[K comparable, V any](
 	ctx context.Context,
 	ttl time.Duration,
@@ -102,6 +107,7 @@ func (c *MapTTLCache[K, V]) Set(key K, value V) {
 	c.data[key] = val
 }
 
+// Get returns ErrNotFound if key is not found in the cache or record is outdated.
 func (c *MapTTLCache[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()

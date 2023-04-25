@@ -22,6 +22,9 @@ type RingBuffer[K comparable, V any] struct {
 	mux   sync.RWMutex
 }
 
+// NewRingBuffer creates RingBuffer instance with predifined size (number of records).
+// This number of records is preallocated immediately. RingBuffer cache can't hold more
+// than size values.
 func NewRingBuffer[K comparable, V any](size int) *RingBuffer[K, V] {
 	return &RingBuffer[K, V]{
 		data:  make([]bufferRec[K, V], size),
@@ -31,7 +34,7 @@ func NewRingBuffer[K comparable, V any](size int) *RingBuffer[K, V] {
 	}
 }
 
-// Set adds value to the ring buffer and the index
+// Set adds value to the ring buffer and key index.
 func (c *RingBuffer[K, V]) Set(key K, value V) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
@@ -49,6 +52,7 @@ func (c *RingBuffer[K, V]) Set(key K, value V) {
 	c.head = (c.head + 1) % len(c.data)
 }
 
+// Get returns cached value for the key, or ErrNotFound if the key does not exist.
 func (c *RingBuffer[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
