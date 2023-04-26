@@ -112,6 +112,33 @@ func TestCommon(t *testing.T) {
 		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
 		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute, time.Minute) }},
 		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](100) }},
+		{
+			"ShardedMapCache", func() Geche[string, string] {
+				return NewSharded[string](
+					func() Geche[string, string] { return NewMapCache[string, string]() },
+					8,
+					&StringMapper{8},
+				)
+			},
+		},
+		{
+			"ShardedMapTTLCache", func() Geche[string, string] {
+				return NewSharded[string](
+					func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Second, time.Second) },
+					8,
+					&StringMapper{8},
+				)
+			},
+		},
+		{
+			"ShardedRingBuffer", func() Geche[string, string] {
+				return NewSharded[string](
+					func() Geche[string, string] { return NewRingBuffer[string, string](100) },
+					8,
+					&StringMapper{8},
+				)
+			},
+		},
 	}
 
 	tab := []struct {
