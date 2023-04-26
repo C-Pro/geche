@@ -82,7 +82,7 @@ ok  	github.com/c-pro/geche	577.123s
 
 # Parallel benchmarks
 
-~~ I considered sharding cache to several buckets to ease lock contention, but after comparing test results with several cache libraries that have sharding, I do not see clear need for that. Maybe with 96 CPUs I would reconsider, but with 10 CPU I do not see a significant bottleneck in the mutex. ~~
+~~I considered sharding cache to several buckets to ease lock contention, but after comparing test results with several cache libraries that have sharding, I do not see clear need for that. Maybe with 96 CPUs I would reconsider, but with 10 CPU I do not see a significant bottleneck in the mutex.~~
 
 I implemented sharding anyway because why not. But it is a separate wrapper, so does not complicate existing codebase.
 
