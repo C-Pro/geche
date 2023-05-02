@@ -73,7 +73,7 @@ func main() {
 ### CacheUpdater
 
 Another useful wrapper is the `CacheUpdater`. It implements a common scenario, when on cache miss some function is called to get the value from external resource (database, API, some lengthy calculation).
-This scenario sounds deceptively simple, but with straightforward implementation can lead to nasty problems like [cache centipede](https://en.wikipedia.org/wiki/Cache_stampede).
+This scenario sounds deceptively simple, but with straightforward implementation can lead to nasty problems like [cache stampede](https://en.wikipedia.org/wiki/Cache_stampede).
 To avoid these types of problems `CacheUpdater` has two limiting mechanisms:
 
 * Pool size limits number of keys that can be updated concurrently. E.g. if you set pool size of 10, your cache update will never run more then 10 simultaneous queries to get the value that was not fount in the cache.
