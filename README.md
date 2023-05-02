@@ -50,12 +50,12 @@ func main() {
     // Create sharded TTL cache with number of shards defined automatically
     // based on number of available CPUs.
     c := NewSharded[string](
-					func() Geche[string, string] {
+                    func() Geche[string, string] {
                         return NewMapTTLCache[string, string](ctx, time.Second, time.Second)
                     },
-					0,
-					&StringMapper{0},
-				)
+                    0,
+                    &StringMapper{},
+                )
 
     c.Set("1", "one")
     c.Set("2", "dua")
@@ -76,35 +76,35 @@ Another useful wrapper is the `CacheUpdater`. It implements a common scenario, w
 This scenario sounds deceptively simple, but with straightforward implementation can lead to nasty problems like [cache stampede](https://en.wikipedia.org/wiki/Cache_stampede).
 To avoid these types of problems `CacheUpdater` has two limiting mechanisms:
 
-* Pool size limits number of keys that can be updated concurrently. E.g. if you set pool size of 10, your cache update will never run more then 10 simultaneous queries to get the value that was not fount in the cache.
-* In flight mechanism does not allow to call update function to get the value for the key if the update function for this key is already running. E.g. if suddenly 10 requests for the same key hit the cache and miss (key not in the cache), only first will trigger the update, others will just wait for the result.
+* Pool size limits number of keys that can be updated concurrently. E.g. if you set pool size of 10, your cache update will never run more then 10 simultaneous queries to get the value that was not found in the cache.
+* In-flight mechanism does not allow to call update function to get the value for the key if the update function for this key is already running. E.g. if suddenly 10 requests for the same key hit the cache and miss (key is not in the cache), only the first one will trigger the update and others will just wait for the result.
 
 ```go
-    updateFn := func(key string) (string, error) {
-	    return DoSomeDatabaseQuery(key)
-    }
+updateFn := func(key string) (string, error) {
+    return DoSomeDatabaseQuery(key)
+}
 
-	u := NewCacheUpdater[string, string](
-		NewMapCache[string, string](),
-		updateFn,
-		10,
-	)
+u := NewCacheUpdater[string, string](
+    NewMapCache[string, string](),
+    updateFn,
+    10,
+)
 
-    v, err := c.Get("1") // Updater will get value from db here.
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
+v, err := c.Get("1") // Updater will get value from db here.
+if err != nil {
+    fmt.Println(err)
+    return
+}
 
-    fmt.Println(v)
+fmt.Println(v)
 
-    v, err = c.Get("1") // And now the value will be returned from the cache.
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
+v, err = c.Get("1") // And now the value will be returned from the cache.
+if err != nil {
+    fmt.Println(err)
+    return
+}
 
-    fmt.Println(v)
+fmt.Println(v)
 ```
 
 ## Benchmarks
