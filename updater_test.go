@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-var theError = errors.New("OOPS! Somebody has dropped the production database!")
+var errThe = errors.New("OOPS! Somebody has dropped the production database")
 
 func updateFn(key string) (string, error) {
 	return key, nil
 }
 
 func updateErrFn(key string) (string, error) {
-	return "", theError
+	return "", errThe
 }
 
 func TestUpdaterScenario(t *testing.T) {
@@ -72,7 +72,7 @@ func TestUpdaterErr(t *testing.T) {
 	)
 
 	_, err := u.Get("test")
-	if err != theError {
+	if err != errThe {
 		t.Errorf("expected to get theError, but got %v", err)
 	}
 
