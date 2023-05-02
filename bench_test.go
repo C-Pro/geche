@@ -143,8 +143,8 @@ func BenchmarkEverything(b *testing.B) {
 			NewCacheUpdater[string, string](
 				NewSharded[string](
 					func() Geche[string, string] { return NewRingBuffer[string, string](100000) },
-					8,
-					&StringMapper{8},
+					0,
+					&StringMapper{},
 				),
 				updateFn,
 				8,
