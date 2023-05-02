@@ -104,4 +104,30 @@ PASS
 ok      cache_bench     496.390s
 ```
 
+And now on 96 CPU machine we clearly see performance degradation due to lock contention. Sharded implementations are about 4 times faster.
+Notice the Imcache result. Is too good to be true 😅
+
+```
+go test -bench . -benchtime=30s
+goos: linux
+goarch: amd64
+pkg: cache_bench
+cpu: Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz
+BenchmarkEverythingParallel/MapCache-96         	170261677	       237.8 ns/op
+BenchmarkEverythingParallel/MapTTLCache-96      	142511408	       272.9 ns/op
+BenchmarkEverythingParallel/RingBuffer-96       	173581318	       230.8 ns/op
+BenchmarkEverythingParallel/ShardedMapCache-96  	572037444	        56.76 ns/op
+BenchmarkEverythingParallel/ShardedMapTTLCache-96         	607333974	        58.35 ns/op
+BenchmarkEverythingParallel/ShardedRingBuffer-96          	599080330	        52.26 ns/op
+BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-96         	148365510	       263.4 ns/op
+BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-96                 	289192544	       122.9 ns/op
+BenchmarkEverythingParallel/github.com/jellydator/ttlcache-96                	101329562	       383.6 ns/op
+BenchmarkEverythingParallel/github.com/erni27/imcache-96                     	1000000000	        12.09 ns/op
+BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-96                	322868853	       111.6 ns/op
+BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-96            	145826460	       259.8 ns/op
+PASS
+ok  	cache_bench	608.617s
+```
+
+
 Concurrent comparison benchmark is located in a [separate repository](https://github.com/C-Pro/cache-benchmarks) to avoid pulling unnecessary dependencies in the library.
