@@ -1,5 +1,9 @@
 package geche
 
+import (
+	"math"
+	"runtime"
+)
 
 // Mapper maps keys to shards. Good mapper maps them uniformly.
 type Mapper[K any] interface {
@@ -32,7 +36,6 @@ type Sharded[K comparable, V any] struct {
 	mapper Mapper[K]
 }
 
-
 // NewSharded creates numShards underlying cache containers
 // using shardFactory function to initialize each,
 // and returns Sharded instance that implements Geche interface
@@ -42,6 +45,9 @@ func NewSharded[K comparable, V any](
 	numShards int,
 	keyMapper Mapper[K],
 ) *Sharded[K, V] {
+	if numShards <= 0 {
+		numShards = defaultShardNumber()
+	}
 	s := Sharded[K, V]{
 		N:      numShards,
 		mapper: keyMapper,
@@ -64,4 +70,11 @@ func (s *Sharded[K, V]) Get(key K) (V, error) {
 
 func (s *Sharded[K, V]) Del(key K) error {
 	return s.shards[s.mapper.Map(key)].Del(key)
+}
+
+// defaultShardNumber returns recommended number of shards for current CPU.
+// It is computed as nearest power of two that is equal or greater than
+// number of available CPU cores.
+func defaultShardNumber() int {
+	return 1 << (int(math.Ceil(math.Log2(float64(runtime.NumCPU())))))
 }
