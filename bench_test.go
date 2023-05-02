@@ -138,6 +138,18 @@ func BenchmarkEverything(b *testing.B) {
 			"RingBuffer",
 			NewRingBuffer[string, string](1000000),
 		},
+		{
+			"ShardedRingBufferUpdater",
+			NewCacheUpdater[string, string](
+				NewSharded[string](
+					func() Geche[string, string] { return NewRingBuffer[string, string](100000) },
+					0,
+					&StringMapper{},
+				),
+				updateFn,
+				8,
+			),
+		},
 	}
 
 	data := genTestData(10_000_000)
