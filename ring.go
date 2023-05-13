@@ -65,6 +65,7 @@ func (c *RingBuffer[K, V]) Get(key K) (V, error) {
 	return c.data[i].value, nil
 }
 
+// Del removes key from the cache. Return value is always nil.
 func (c *RingBuffer[K, V]) Del(key K) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
@@ -72,4 +73,26 @@ func (c *RingBuffer[K, V]) Del(key K) error {
 	delete(c.index, key)
 
 	return nil
+}
+
+// Snapshot returns a shallow copy of the cache data.
+// Locks the cache from modification for the duration of the copy.
+func (c *RingBuffer[K, V]) Snapshot() map[K]V {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	snapshot := make(map[K]V, len(c.index))
+	for k, i := range c.index {
+		snapshot[k] = c.data[i].value
+	}
+
+	return snapshot
+}
+
+// Len returns number of items in the cache.
+func (c *RingBuffer[K, V]) Len() int {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	return len(c.index)
 }

@@ -43,7 +43,7 @@ func main() {
 ```
 
 If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
-To shard the cache you need to wrap it using `NewSharded`:
+To shard the cache you need to wrap it using `NewSharded`. Sharded cache will determine to which shard the value should go using a mapper that implements interface with `Map(key K, numShards int) int` function. The point of this function is to uniformly map keys to provided number of shards.
 
 ```go
 func main() {
@@ -69,6 +69,15 @@ func main() {
     fmt.Println(v)
 }
 ```
+
+Sometimes it is useful to get snapshot of the whole cache (e.g. to avoid cold cache on service restart).
+All cache implementations have `Snapshot() map[K]V` function that aquires ReadLock, copies the cache content to the map and returns it.
+Please be aware that it is a shallow copy, so if your cache value type contains reference types, it may be unsafe to modify the returned copy.
+
+```go
+
+```
+
 
 ### CacheUpdater
 

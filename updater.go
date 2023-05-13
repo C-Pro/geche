@@ -102,6 +102,18 @@ func (u *Updater[K, V]) Get(key K) (V, error) {
 	return v, err
 }
 
+// Del deletes key from the cache.
 func (u *Updater[K, V]) Del(key K) error {
 	return u.cache.Del(key)
+}
+
+// Snapshot returns a shallow copy of the cache.
+// It locks the cache from modification for the duration of the copy.
+func (u *Updater[K, V]) Snapshot() map[K]V {
+	return u.cache.Snapshot()
+}
+
+// Len returns the number of items in the cache.
+func (u *Updater[K, V]) Len() int {
+	return u.cache.Len()
 }

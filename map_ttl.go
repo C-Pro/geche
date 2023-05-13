@@ -192,3 +192,26 @@ func (c *MapTTLCache[K, V]) cleanup() error {
 
 	return nil
 }
+
+// Snapshot returns a shallow copy of the cache data.
+// Locks the cache from modification for the duration of the copy.
+func (c *MapTTLCache[K, V]) Snapshot() map[K]V {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	snapshot := make(map[K]V, len(c.data))
+	for k, v := range c.data {
+		snapshot[k] = v.value
+	}
+
+	return snapshot
+}
+
+
+// Len returns the number of records in the cache.
+func (c *MapTTLCache[K, V]) Len() int {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	return len(c.data)
+}
