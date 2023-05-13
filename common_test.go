@@ -39,6 +39,51 @@ func testDel(t *testing.T, imp Geche[string, string]) {
 	}
 }
 
+func testSnapshotLen(t *testing.T, imp Geche[string, string]) {
+	expected := map[string]string{}
+	for i := 0; i < 100; i++ {
+		s := strconv.Itoa(i)
+		imp.Set(s, s)
+		expected[s] = s
+	}
+
+	if imp.Len() != 100 {
+		t.Errorf("expected length %d, got %d", 100, imp.Len())
+	}
+
+	for _, i := range []int{0, 13, 42, 69, 99} {
+		s := strconv.Itoa(i)
+		if err := imp.Del(s); err != nil {
+			t.Errorf("unexpected error in Del: %v", err)
+		}
+		delete(expected, s)
+	}
+
+	got := imp.Snapshot()
+
+	if imp.Len() != 95 {
+		t.Errorf("expected length %d, got %d", 95, imp.Len())
+	}
+
+	for k, v := range expected {
+		gv, ok := got[k]
+		if !ok {
+			t.Errorf("expected key %q not found in snapshot", k)
+		}
+
+		if gv != v {
+			t.Errorf("expected value %q, got %q", v, gv)
+		}
+	}
+
+	for k, v := range got {
+		_, ok := expected[k]
+		if !ok {
+			t.Errorf("unexpected key %q with value %q found in snapshot", k, v)
+		}
+	}
+}
+
 func testDelOdd(t *testing.T, imp Geche[string, string]) {
 	for i := 0; i < 100; i++ {
 		s := strconv.Itoa(i)
@@ -149,6 +194,7 @@ func TestCommon(t *testing.T) {
 		{"GetNonExist", testGetNonExist},
 		{"Del", testDel},
 		{"DelOdd", testDelOdd},
+		{"SnapshotLen", testSnapshotLen},
 	}
 	for _, ci := range caches {
 		for _, tc := range tab {

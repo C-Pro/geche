@@ -20,18 +20,18 @@ func newStringCache() *stringCache {
 	}
 }
 
-func (c *stringCache) Set(key, value string) {
-	c.mux.Lock()
-	defer c.mux.Unlock()
+func (s *stringCache) Set(key, value string) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
 
-	c.data[key] = value
+	s.data[key] = value
 }
 
-func (c *stringCache) Get(key string) (string, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
+func (s *stringCache) Get(key string) (string, error) {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 
-	v, ok := c.data[key]
+	v, ok := s.data[key]
 	if !ok {
 		return v, ErrNotFound
 	}
@@ -39,13 +39,22 @@ func (c *stringCache) Get(key string) (string, error) {
 	return v, nil
 }
 
-func (c *stringCache) Del(key string) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
+func (s *stringCache) Del(key string) error {
+	s.mux.Lock()
+	defer s.mux.Unlock()
 
-	delete(c.data, key)
+	delete(s.data, key)
 
 	return nil
+}
+
+func (s *stringCache) Snapshot() map[string]string { return nil }
+
+func (s *stringCache) Len() int {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+
+	return len(s.data)
 }
 
 type unsafeCache struct {
@@ -58,12 +67,12 @@ func newUnsafeCache() *unsafeCache {
 	}
 }
 
-func (c *unsafeCache) Set(key, value string) {
-	c.data[key] = value
+func (u *unsafeCache) Set(key, value string) {
+	u.data[key] = value
 }
 
-func (c *unsafeCache) Get(key string) (string, error) {
-	v, ok := c.data[key]
+func (u *unsafeCache) Get(key string) (string, error) {
+	v, ok := u.data[key]
 	if !ok {
 		return v, ErrNotFound
 	}
@@ -71,10 +80,16 @@ func (c *unsafeCache) Get(key string) (string, error) {
 	return v, nil
 }
 
-func (c *unsafeCache) Del(key string) error {
-	delete(c.data, key)
+func (u *unsafeCache) Del(key string) error {
+	delete(u.data, key)
 
 	return nil
+}
+
+func (u *unsafeCache) Snapshot() map[string]string { return nil }
+
+func (u *unsafeCache) Len() int {
+	return len(u.data)
 }
 
 type anyCache struct {
@@ -88,18 +103,18 @@ func newAnyCache() *anyCache {
 	}
 }
 
-func (c *anyCache) Set(key string, value any) {
-	c.mux.Lock()
-	defer c.mux.Unlock()
+func (a *anyCache) Set(key string, value any) {
+	a.mux.Lock()
+	defer a.mux.Unlock()
 
-	c.data[key] = value
+	a.data[key] = value
 }
 
-func (c *anyCache) Get(key string) (any, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
+func (a *anyCache) Get(key string) (any, error) {
+	a.mux.RLock()
+	defer a.mux.RUnlock()
 
-	v, ok := c.data[key]
+	v, ok := a.data[key]
 	if !ok {
 		return v, ErrNotFound
 	}
@@ -107,8 +122,17 @@ func (c *anyCache) Get(key string) (any, error) {
 	return v, nil
 }
 
-func (c *anyCache) Del(key string) error {
-	delete(c.data, key)
+func (a *anyCache) Del(key string) error {
+	delete(a.data, key)
 
 	return nil
+}
+
+func (a *anyCache) Snapshot() map[string]any { return nil }
+
+func (a *anyCache) Len() int {
+	a.mux.RLock()
+	defer a.mux.RUnlock()
+
+	return len(a.data)
 }

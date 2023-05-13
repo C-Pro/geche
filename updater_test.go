@@ -25,6 +25,10 @@ func TestUpdaterScenario(t *testing.T) {
 		2,
 	)
 
+	if u.Len() != 0 {
+		t.Errorf("expected length to be 0, but got %d", u.Len())
+	}
+
 	v1, err := u.Get("test")
 	if err != nil {
 		t.Errorf("unexpected error in Get: %v", err)
@@ -37,6 +41,10 @@ func TestUpdaterScenario(t *testing.T) {
 
 	if v1 != "test" || v1 != v2 {
 		t.Errorf("expected both values to be %q, but got %q, %q", "test", v1, v2)
+	}
+
+	if u.Len() != 1 {
+		t.Errorf("expected length to be 1, but got %d", u.Len())
 	}
 
 	if err := u.Del("test"); err != nil {
@@ -61,6 +69,15 @@ func TestUpdaterScenario(t *testing.T) {
 
 	if v3 != "best" {
 		t.Errorf("expected to get %q, but got %q", "best", v3)
+	}
+
+	s := u.Snapshot()
+	if len(s) != 1 {
+		t.Errorf("expected snapshot length to be 1, but got %d", len(s))
+	}
+
+	if s["test"] != "best" {
+		t.Errorf("expected to get %q, but got %q", "best", s["test"])
 	}
 }
 
