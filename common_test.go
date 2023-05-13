@@ -53,7 +53,9 @@ func testSnapshotLen(t *testing.T, imp Geche[string, string]) {
 
 	for _, i := range []int{0, 13, 42, 69, 99} {
 		s := strconv.Itoa(i)
-		imp.Del(s)
+		if err := imp.Del(s); err != nil {
+			t.Errorf("unexpected error in Del: %v", err)
+		}
 		delete(expected, s)
 	}
 
