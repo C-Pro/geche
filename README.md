@@ -135,8 +135,6 @@ If your use-case requires not only random but also sequential access to values i
 
 Another useful trick is to use `ListByPrefix("")` to get all values in the cache as a slice ordered by key.
 
-```go
-
 Internally `KV` maintains trie structure to store keys to be able to quickly find all keys with the same prefix. This trie is updated on every `Set` and `Del` operation, so it is not free both in terms of CPU and memory consumption. If you don't need `ListByPrefix` functionality, don't use this wrapper.
 
 This wrapper has some limitations:
@@ -145,7 +143,18 @@ This wrapper has some limitations:
 * If you wrap `KV` with another wrapper you can't use `ListByPrefix`. Don't do it!
 
 ```go
+func main() {
+    c := NewKV[string](NewMapCache[string, string]())
 
+    c.Set("testB", "value B")
+    c.Set("testA", "value A")
+    c.Del("best")
+    v, _ := c.ListByPrefix("test")
+
+    // Will output [value A value B]
+    fmt.Println(v)
+}
+```
 
 ## Benchmarks
 
