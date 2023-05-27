@@ -33,9 +33,6 @@ func (kv *KV[V]) Set(key string, value V) {
 	defer kv.mux.Unlock()
 
 	kv.data.Set(key, value)
-	if key == "" {
-		return
-	}
 
 	node := kv.trie
 	for i := 0; i < len(key); i++ {

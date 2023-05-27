@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -120,4 +121,45 @@ func TestKVEmptyPrefix(t *testing.T) {
 	}
 
 	compareSlice(t, expected, got)
+}
+
+func TestKVNonexist(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("test", "best")
+
+	got, err := kv.ListByPrefix("nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	if len(got) > 0 {
+		t.Errorf("unexpected len %d", len(got))
+	}
+}
+
+func TestKVError(t *testing.T) {
+	cache := &MockErrCache{}
+	kv := NewKV[string](cache)
+
+	kv.Set("err", "something")
+	_, err := kv.ListByPrefix("e")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+}
+
+// To check that the error is propagated correctly.
+type MockErrCache struct{}
+
+func (m *MockErrCache) Set(key string, value string) {}
+func (m *MockErrCache) Del(key string) error         { return nil }
+func (m *MockErrCache) Snapshot() map[string]string  { return nil }
+func (m *MockErrCache) Len() int                     { return 0 }
+func (m *MockErrCache) Get(key string) (string, error) {
+	if key == "err" {
+		return "", errors.New("wow an error")
+	}
+	return "", nil
 }
