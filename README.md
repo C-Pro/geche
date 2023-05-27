@@ -12,9 +12,9 @@ Implementations are as simple as possible to be predictable in max latency, memo
 * `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire). If you don't want to read value from cache that is older than some threshold (e.g. 1 sec), you set this TTL when initializing the cache object and obsolete rows will be removed from cache automatically.
 * `RingBuffer` is a predefined size cache that allocates all memory from the start and will not grow above it. It keeps constant size by overwriting the oldest values in the cache with new ones. Use this cache when you need speed and fixed memory footprint, and your key cardinality is predictable (or you are ok with having cache misses if cardinality suddenly grows above your cache size).
 
-## Example
+## Examples
 
-Interface is very simple with three methods: `Set`, `Get`, `Del`. Here's a quick example for a ring buffer holding 10k records.
+Interface is quite simple with five methods: `Set`, `Get`, `Del`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
 
 ```go
 package main
@@ -42,42 +42,25 @@ func main() {
 }
 ```
 
-If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
-To shard the cache you need to wrap it using `NewSharded`. Sharded cache will determine to which shard the value should go using a mapper that implements interface with `Map(key K, numShards int) int` function. The point of this function is to uniformly map keys to provided number of shards.
-
-```go
-func main() {
-    // Create sharded TTL cache with number of shards defined automatically
-    // based on number of available CPUs.
-    c := NewSharded[string](
-                    func() Geche[string, string] {
-                        return NewMapTTLCache[string, string](ctx, time.Second, time.Second)
-                    },
-                    0,
-                    &StringMapper{},
-                )
-
-    c.Set("1", "one")
-    c.Set("2", "dua")
-    c.Del("2")
-    v, err := c.Get("1")
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-
-    fmt.Println(v)
-}
-```
-
 Sometimes it is useful to get snapshot of the whole cache (e.g. to avoid cold cache on service restart).
-All cache implementations have `Snapshot() map[K]V` function that aquires ReadLock, copies the cache content to the map and returns it.
+All cache implementations have `Snapshot() map[K]V` function that aquires Read Lock, copies the cache content to the map and returns it. Notice that maps in Go do not guarantee order of keys, so if you need to iterate over the cache in some specific order, see section for `NewKV` wrapper below.
+
 Please be aware that it is a shallow copy, so if your cache value type contains reference types, it may be unsafe to modify the returned copy.
 
 ```go
+    c := geche.NewMapCache[int, string]()
+    c.Set(1, "one")
+    c.Set(2, "dua")
 
+    fmt.Println(c.Snapshot())
 ```
 
+## Wrappers
+
+There are several wrappers that you can use to add some extra features to your cache of choice.
+You can nest wrappers, but be aware that order in which you wrap will change the behaviour of resulting cache.
+
+For example if you wrap `NewUpdater` with `NewSharded`, your updater poolSize will be effectively multiplied by number of shards, because each shard will be a separate `Updater` instance.
 
 ### CacheUpdater
 
@@ -115,6 +98,54 @@ if err != nil {
 
 fmt.Println(v)
 ```
+
+### Sharding
+
+If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
+To shard the cache you need to wrap it using `NewSharded`. Sharded cache will determine to which shard the value should go using a mapper that implements interface with `Map(key K, numShards int) int` function. The point of this function is to uniformly map keys to provided number of shards.
+
+```go
+func main() {
+    // Create sharded TTL cache with number of shards defined automatically
+    // based on number of available CPUs.
+    c := NewSharded[string](
+                    func() Geche[string, string] {
+                        return NewMapTTLCache[string, string](ctx, time.Second, time.Second)
+                    },
+                    0,
+                    &StringMapper{},
+                )
+
+    c.Set("1", "one")
+    c.Set("2", "dua")
+    c.Del("2")
+    v, err := c.Get("1")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    fmt.Println(v)
+}
+```
+
+### KV
+
+If your use-case requires not only random but also sequential access to values in the cache, you can wrap it using `NewKV` wrapper. It will provide you with extra `ListByPrefix` function that returns all values in the cache that have keys starting with provided prefix. Values will be returned in lexicographical order of the keys (order by key).
+
+Another useful trick is to use `ListByPrefix("")` to get all values in the cache as a slice ordered by key.
+
+```go
+
+Internally `KV` maintains trie structure to store keys to be able to quickly find all keys with the same prefix. This trie is updated on every `Set` and `Del` operation, so it is not free both in terms of CPU and memory consumption. If you don't need `ListByPrefix` functionality, don't use this wrapper.
+
+This wrapper has some limitations:
+* `KV` only supports keys of type `string`.
+* Lexicographical order is maintained on the byte level, so it will work as expected for ASCII strings, but may not work for other encodings.
+* If you wrap `KV` with another wrapper you can't use `ListByPrefix`. Don't do it!
+
+```go
+
 
 ## Benchmarks
 

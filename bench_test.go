@@ -90,6 +90,10 @@ func BenchmarkSet(b *testing.B) {
 			"RingBuffer",
 			NewRingBuffer[string, string](1000000),
 		},
+		{
+			"KVMapCache",
+			NewKV[string](NewMapCache[string, string]()),
+		},
 	}
 
 	data := genTestData(10_000_000)
@@ -149,6 +153,10 @@ func BenchmarkEverything(b *testing.B) {
 				updateFn,
 				8,
 			),
+		},
+		{
+			"KVRingBufferCache",
+			NewKV[string](NewRingBuffer[string, string](1000000)),
 		},
 	}
 
