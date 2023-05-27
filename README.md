@@ -143,17 +143,17 @@ This wrapper has some limitations:
 * If you wrap `KV` with another wrapper you can't use `ListByPrefix`. Don't do it!
 
 ```go
-func main() {
-    c := NewKV[string](NewMapCache[string, string]())
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
 
-    c.Set("testB", "value B")
-    c.Set("testA", "value A")
-    c.Del("best")
-    v, _ := c.ListByPrefix("test")
+	kv.Set("foo", "bar")
+	kv.Set("foo2", "bar2")
+	kv.Set("foo3", "bar3")
+	kv.Set("foo1", "bar1")
 
-    // Will output [value A value B]
-    fmt.Println(v)
-}
+	res, _ := kv.ListByPrefix("foo")
+	fmt.Println(res)
+	// Output: [bar bar1 bar2 bar3]
 ```
 
 ## Benchmarks

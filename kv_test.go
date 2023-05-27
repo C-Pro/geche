@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func ExampleNewKV() {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("foo", "bar")
+	kv.Set("foo2", "bar2")
+	kv.Set("foo3", "bar3")
+	kv.Set("foo1", "bar1")
+
+	res, _ := kv.ListByPrefix("foo")
+	fmt.Println(res)
+	// Output: [bar bar1 bar2 bar3]
+}
+
 func compareSlice(t *testing.T, exp, got []string) {
 	t.Helper()
 
