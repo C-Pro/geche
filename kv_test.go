@@ -57,8 +57,8 @@ func TestKV(t *testing.T) {
 	}
 	compareSlice(t, expected, got)
 
-	kv.Del("777")
-	kv.Del("779")
+	_ = kv.Del("777")
+	_ = kv.Del("779")
 
 	if _, err := kv.Get("777"); err != ErrNotFound {
 		t.Fatalf("expected error %v, got %v", ErrNotFound, err)
@@ -118,6 +118,6 @@ func TestKVEmptyPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
-	
+
 	compareSlice(t, expected, got)
 }
