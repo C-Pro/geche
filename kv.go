@@ -90,12 +90,12 @@ func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
 	return kv.dfs(node, []byte(prefix))
 }
 
-// Get value by key from the underlying sharded cache.
+// Get value by key from the underlying cache.
 func (kv *KV[V]) Get(key string) (V, error) {
 	return kv.data.Get(key)
 }
 
-// Del key from the underlying sharded cache.
+// Del key from the underlying cache.
 func (kv *KV[V]) Del(key string) error {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
@@ -136,7 +136,7 @@ func (kv *KV[V]) Snapshot() map[string]V {
 	return kv.data.Snapshot()
 }
 
-// Len returns total number of elements in the underlying sharded caches.
+// Len returns total number of elements in the underlying caches.
 func (kv *KV[V]) Len() int {
 	return kv.data.Len()
 }
