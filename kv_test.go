@@ -158,7 +158,13 @@ func TestKVError(t *testing.T) {
 	kv := NewKV[string](cache)
 
 	kv.Set("err", "something")
-	_, err := kv.ListByPrefix("e")
+	_, err := kv.ListByPrefix("err")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+
+	kv.Set("er", "another one")
+	_, err = kv.ListByPrefix("e")
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
