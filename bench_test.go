@@ -184,3 +184,31 @@ func BenchmarkEverything(b *testing.B) {
 		}
 	})
 }
+
+func randomString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte('0') + byte(rand.Intn(74))
+	}
+
+	return string(b)
+}
+
+// This one is quite slow. Trace shows that most of the time is spent allocating output slice.
+func BenchmarkKVListByPrefix(b *testing.B) {
+	c := NewKV[string](NewMapCache[string, string]())
+	keys := make([]string, 100_000)
+	for i := 0; i < 100_000; i++ {
+		l := rand.Intn(36)
+		unique := randomString(l)
+		keys[i] = unique
+		for j := 0; j < 10; j++ {
+			c.Set(unique+randomString(l), randomString(l))
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.ListByPrefix(keys[i%len(keys)])
+	}
+}

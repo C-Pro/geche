@@ -5,8 +5,13 @@ import (
 )
 
 type trieNode struct {
-	c        byte
-	next     map[byte]*trieNode
+	c    byte
+	next map[byte]*trieNode
+	// min and max are used to speed up the search
+	// without resorting to implementing double linked list.
+	min byte
+	max byte
+
 	terminal bool
 }
 
@@ -39,6 +44,15 @@ func (kv *KV[V]) Set(key string, value V) {
 	for i := 0; i < len(key); i++ {
 		if node.next == nil {
 			node.next = make(map[byte]*trieNode)
+			node.min = key[i]
+			node.max = key[i]
+		}
+
+		if key[i] < node.min {
+			node.min = key[i]
+		}
+		if key[i] > node.max {
+			node.max = key[i]
 		}
 
 		node = node.next[key[i]]
@@ -55,8 +69,19 @@ func (kv *KV[V]) Set(key string, value V) {
 	node.terminal = true
 }
 
+type stackItem[V any] struct {
+	node   *trieNode
+	prefix []byte
+	c      byte
+}
+
 func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 	res := []V{}
+
+	stack := []stackItem[V]{
+		{node: node, c: node.min},
+	}
+
 	if node.terminal {
 		val, err := kv.data.Get(string(prefix))
 		if err != nil {
@@ -65,21 +90,34 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		res = append(res, val)
 	}
 
-	i := byte(0)
+	var (
+		top  stackItem[V]
+		next *trieNode
+	)
 	for {
-		if node.next[i] != nil {
-			next := node.next[i]
-			nextRes, err := kv.dfs(next, append(prefix, next.c))
-			if err != nil {
-				return nil, err
-			}
-			res = append(res, nextRes...)
-		}
-
-		if i == 255 {
+		if len(stack) == 0 {
 			break
 		}
-		i++
+
+		top = stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if top.c < top.node.max {
+			stack = append(stack, stackItem[V]{node: top.node, prefix: top.prefix, c: top.c + 1})
+		}
+
+		if top.node.next[top.c] != nil {
+			next = top.node.next[top.c]
+			if next.terminal {
+				key := append(prefix, top.prefix...)
+				val, err := kv.data.Get(string(append(key, top.c)))
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, val)
+			}
+			stack = append(stack, stackItem[V]{node: next, prefix: append(top.prefix, top.c), c: top.node.min})
+		}
 	}
 
 	return res, nil
