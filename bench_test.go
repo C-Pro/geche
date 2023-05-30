@@ -155,8 +155,8 @@ func BenchmarkEverything(b *testing.B) {
 			),
 		},
 		{
-			"KVRingBufferCache",
-			NewKV[string](NewRingBuffer[string, string](1000000)),
+			"KVMapCache",
+			NewKV[string](NewMapCache[string, string]()),
 		},
 	}
 

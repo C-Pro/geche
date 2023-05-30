@@ -6,7 +6,7 @@ import (
 
 type trieNode struct {
 	c        byte
-	next     [256]*trieNode
+	next     map[byte]*trieNode
 	terminal bool
 }
 
@@ -35,16 +35,21 @@ func (kv *KV[V]) Set(key string, value V) {
 	kv.data.Set(key, value)
 
 	node := kv.trie
+	prev := node
 	for i := 0; i < len(key); i++ {
-		next := node.next[key[i]]
-		if next == nil {
-			next = &trieNode{
-				c: key[i],
-			}
-			node.next[key[i]] = next
+		if node.next == nil {
+			node.next = make(map[byte]*trieNode)
 		}
 
-		node = next
+		node = node.next[key[i]]
+		if node == nil {
+			node = &trieNode{
+				c: key[i],
+			}
+			prev.next[key[i]] = node
+		}
+
+		prev = node
 	}
 
 	node.terminal = true
@@ -60,7 +65,8 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		res = append(res, val)
 	}
 
-	for i := 0; i < len(node.next); i++ {
+	i := byte(0)
+	for {
 		if node.next[i] != nil {
 			next := node.next[i]
 			nextRes, err := kv.dfs(next, append(prefix, next.c))
@@ -69,6 +75,11 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 			}
 			res = append(res, nextRes...)
 		}
+
+		if i == 255 {
+			break
+		}
+		i++
 	}
 
 	return res, nil
@@ -115,11 +126,17 @@ func (kv *KV[V]) Del(key string) error {
 	node.terminal = false
 
 	empty := true
-	for i := 0; i < len(node.next); i++ {
+	i := byte(0)
+	for {
 		if node.next[i] != nil {
 			empty = false
 			break
 		}
+
+		if i == 255 {
+			break
+		}
+		i++
 	}
 
 	if empty {
