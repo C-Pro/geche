@@ -135,6 +135,7 @@ func testDelOdd(t *testing.T, imp Geche[string, string]) {
 		}
 	}
 
+	// Del is idempotent. Should not return error for non-existing keys.
 	if err := imp.Del("key"); err != nil {
 		t.Errorf("unexpected error in Del: %v", err)
 	}
@@ -157,6 +158,7 @@ func TestCommon(t *testing.T) {
 		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
 		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute, time.Minute) }},
 		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](100) }},
+		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
 		{
 			"ShardedMapCache", func() Geche[string, string] {
 				return NewSharded[string](

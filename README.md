@@ -9,12 +9,12 @@ Collection of generic cache implementations in Go focused on simplicity. No clev
 Implementations are as simple as possible to be predictable in max latency, memory allocation and concurrency impact (writes lock reads and are serialized with other writes).
 
 * `MapCache` is a very simple map-based thread-safe cache, that is not limited from growing. Can be used when you have relatively small number of distinct keys that does not grow significantly, and you do not need the values to expire automatically. E.g. if your keys are country codes, timezones etc, this cache type is ok to use.
-* `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire). If you don't want to read value from cache that is older then some threshold (e.g. 1 sec), you set this TTL when initializing the cache object and obsolete rows will be removed from cache automatically.
+* `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire). If you don't want to read value from cache that is older than some threshold (e.g. 1 sec), you set this TTL when initializing the cache object and obsolete rows will be removed from cache automatically.
 * `RingBuffer` is a predefined size cache that allocates all memory from the start and will not grow above it. It keeps constant size by overwriting the oldest values in the cache with new ones. Use this cache when you need speed and fixed memory footprint, and your key cardinality is predictable (or you are ok with having cache misses if cardinality suddenly grows above your cache size).
 
-## Example
+## Examples
 
-Interface is very simple with three methods: `Set`, `Get`, `Del`. Here's a quick example for a ring buffer holding 10k records.
+Interface is quite simple with five methods: `Set`, `Get`, `Del`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
 
 ```go
 package main
@@ -42,42 +42,25 @@ func main() {
 }
 ```
 
-If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
-To shard the cache you need to wrap it using `NewSharded`. Sharded cache will determine to which shard the value should go using a mapper that implements interface with `Map(key K, numShards int) int` function. The point of this function is to uniformly map keys to provided number of shards.
-
-```go
-func main() {
-    // Create sharded TTL cache with number of shards defined automatically
-    // based on number of available CPUs.
-    c := NewSharded[string](
-                    func() Geche[string, string] {
-                        return NewMapTTLCache[string, string](ctx, time.Second, time.Second)
-                    },
-                    0,
-                    &StringMapper{},
-                )
-
-    c.Set("1", "one")
-    c.Set("2", "dua")
-    c.Del("2")
-    v, err := c.Get("1")
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-
-    fmt.Println(v)
-}
-```
-
 Sometimes it is useful to get snapshot of the whole cache (e.g. to avoid cold cache on service restart).
-All cache implementations have `Snapshot() map[K]V` function that aquires ReadLock, copies the cache content to the map and returns it.
+All cache implementations have `Snapshot() map[K]V` function that aquires Read Lock, copies the cache content to the map and returns it. Notice that maps in Go do not guarantee order of keys, so if you need to iterate over the cache in some specific order, see section for `NewKV` wrapper below.
+
 Please be aware that it is a shallow copy, so if your cache value type contains reference types, it may be unsafe to modify the returned copy.
 
 ```go
+    c := geche.NewMapCache[int, string]()
+    c.Set(1, "one")
+    c.Set(2, "dua")
 
+    fmt.Println(c.Snapshot())
 ```
 
+## Wrappers
+
+There are several wrappers that you can use to add some extra features to your cache of choice.
+You can nest wrappers, but be aware that order in which you wrap will change the behaviour of resulting cache.
+
+For example if you wrap `NewUpdater` with `NewSharded`, your updater poolSize will be effectively multiplied by number of shards, because each shard will be a separate `Updater` instance.
 
 ### CacheUpdater
 
@@ -116,11 +99,68 @@ if err != nil {
 fmt.Println(v)
 ```
 
+### Sharding
+
+If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
+To shard the cache you need to wrap it using `NewSharded`. Sharded cache will determine to which shard the value should go using a mapper that implements interface with `Map(key K, numShards int) int` function. The point of this function is to uniformly map keys to provided number of shards.
+
+```go
+func main() {
+    // Create sharded TTL cache with number of shards defined automatically
+    // based on number of available CPUs.
+    c := NewSharded[string](
+                    func() Geche[string, string] {
+                        return NewMapTTLCache[string, string](ctx, time.Second, time.Second)
+                    },
+                    0,
+                    &StringMapper{},
+                )
+
+    c.Set("1", "one")
+    c.Set("2", "dua")
+    c.Del("2")
+    v, err := c.Get("1")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    fmt.Println(v)
+}
+```
+
+### KV
+
+If your use-case requires not only random but also sequential access to values in the cache, you can wrap it using `NewKV` wrapper. It will provide you with extra `ListByPrefix` function that returns all values in the cache that have keys starting with provided prefix. Values will be returned in lexicographical order of the keys (order by key).
+
+Another useful trick is to use `ListByPrefix("")` to get all values in the cache as a slice ordered by key.
+
+Internally `KV` maintains trie structure to store keys to be able to quickly find all keys with the same prefix. This trie is updated on every `Set` and `Del` operation, so it is not free both in terms of CPU and memory consumption. If you don't need `ListByPrefix` functionality, don't use this wrapper.
+
+This wrapper has some limitations:
+* `KV` only supports keys of type `string`.
+* Lexicographical order is maintained on the byte level, so it will work as expected for ASCII strings, but may not work for other encodings.
+* If you wrap `KV` with another wrapper you can't use `ListByPrefix`. Don't do it!
+
+```go
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("foo", "bar")
+	kv.Set("foo2", "bar2")
+	kv.Set("foo3", "bar3")
+	kv.Set("foo1", "bar1")
+
+	res, _ := kv.ListByPrefix("foo")
+	fmt.Println(res)
+	// Output: [bar bar1 bar2 bar3]
+```
+
 ## Benchmarks
 
 Test suite contains a couple of benchmarks to compare the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.
 
-TL/DR: generics are faster than `interface{}` but slower than hardcoded type implementation. Ring buffer is 2x+ faster then map-based TTL cache.
+TL/DR: generics are faster than `interface{}` but slower than hardcoded type implementation. Ring buffer is 2x+ faster than map-based TTL cache.
 
 There are two types of benchmarks:
 * `BenchmarkSet` only times the `Set` operation that allocates all the memory, and usually is the most resource intensive.
@@ -178,29 +218,32 @@ PASS
 ok      cache_bench     496.390s
 ```
 
-And now on 96 CPU machine we clearly see performance degradation due to lock contention. Sharded implementations are about 4 times faster.
+And now on 32 CPU machine we clearly see performance degradation due to lock contention. Sharded implementations are about 4 times faster.
 Notice the Imcache result. Is too good to be true 😅
 
-```
-go test -bench . -benchtime=30s
+KV wrapper result is worse then other caches, but it is expected as it keeps key level ordering on insert and does extra work to cleanup the key in trie on delete.
+
+```shell
+$ go test -benchtime=10s -benchmem -bench .
 goos: linux
 goarch: amd64
 pkg: cache_bench
-cpu: Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz
-BenchmarkEverythingParallel/MapCache-96         	170261677	       237.8 ns/op
-BenchmarkEverythingParallel/MapTTLCache-96      	142511408	       272.9 ns/op
-BenchmarkEverythingParallel/RingBuffer-96       	173581318	       230.8 ns/op
-BenchmarkEverythingParallel/ShardedMapCache-96  	572037444	        56.76 ns/op
-BenchmarkEverythingParallel/ShardedMapTTLCache-96         	607333974	        58.35 ns/op
-BenchmarkEverythingParallel/ShardedRingBuffer-96          	599080330	        52.26 ns/op
-BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-96         	148365510	       263.4 ns/op
-BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-96                 	289192544	       122.9 ns/op
-BenchmarkEverythingParallel/github.com/jellydator/ttlcache-96                	101329562	       383.6 ns/op
-BenchmarkEverythingParallel/github.com/erni27/imcache-96                     	1000000000	        12.09 ns/op
-BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-96                	322868853	       111.6 ns/op
-BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-96            	145826460	       259.8 ns/op
+cpu: Intel(R) Xeon(R) Platinum 8280 CPU @ 2.70GHz
+BenchmarkEverythingParallel/MapCache-32         	64085875	       248.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/MapTTLCache-32      	58598002	       279.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/RingBuffer-32       	48229945	       315.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedMapCache-32  	234258486	        53.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedMapTTLCache-32         	231177732	        53.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedRingBuffer-32          	236979438	        48.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-32         	39842918	       345.9 ns/op	       7 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-32                 	150612642	        81.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/jellydator/ttlcache-32                	29333647	       433.9 ns/op	      43 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/erni27/imcache-32                     	345577933	        35.63 ns/op	      50 B/op	       1 allocs/op
+BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-32                	83293519	       142.1 ns/op	      27 B/op	       1 allocs/op
+BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-32            	35763888	       378.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/egregors/kesh-32                      	25860772	       524.1 ns/op	      84 B/op	       2 allocs/op
+BenchmarkEverythingParallel/KVMapCache-32                                    	33802629	       478.4 ns/op	     109 B/op	       0 allocs/op
 PASS
-ok  	cache_bench	608.617s
 ```
 
 

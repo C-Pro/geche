@@ -1,9 +1,47 @@
 package geche
 
 import (
+	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 )
+
+func ExampleNewSharded() {
+	numShards := 4
+	c := NewSharded[int](
+		func() Geche[int, string] {
+			return NewMapCache[int, string]()
+		},
+		numShards,
+		&NumberMapper[int]{},
+	)
+
+
+	// Set 4000 records in 4 parallel goroutines.
+	wg := sync.WaitGroup{}
+	wg.Add(numShards)
+	for i := 0; i < numShards; i++ {
+		go func(i int) {
+			defer wg.Done()
+			for j := i * 1000; j < i*1000+1000; j++ {
+				c.Set(j, strconv.Itoa(j))
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i := 0; i < 10; i++ {
+		v, _ := c.Get(i*1000 + 500)
+		fmt.Println(v)
+	}
+
+	// Output: 500
+	// 1500
+	// 2500
+	// 3500
+}
 
 func TestSharded(t *testing.T) {
 	c := NewSharded[int](
@@ -32,6 +70,4 @@ func TestSharded(t *testing.T) {
 	if len(c.shards) != 4 {
 		t.Errorf("expected number of shards to be 4 but got %d", len(c.shards))
 	}
-
-	
 }

@@ -1,7 +1,9 @@
 package geche
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -16,6 +18,26 @@ func updateFn(key string) (string, error) {
 
 func updateErrFn(key string) (string, error) {
 	return "", errThe
+}
+
+func ExampleNewCacheUpdater() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a cache updater with updaterFunction
+	// that sets cache value equal to the key.
+	u := NewCacheUpdater[string, string](
+		NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		updateFn,
+		2,
+	)
+
+	// Value is not in the cache yet.
+	// But it will be set by the updater function.
+	v, _ := u.Get("nonexistent")
+	fmt.Println(v)
+
+	// Output: nonexistent
 }
 
 func TestUpdaterScenario(t *testing.T) {
