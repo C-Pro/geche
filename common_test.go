@@ -131,7 +131,7 @@ func testDelOdd(t *testing.T, imp Geche[string, string]) {
 		}
 
 		if err != ErrNotFound {
-			t.Errorf("expected error %v, got %v", ErrNotFound, err)
+			t.Errorf("expected error %v, got %v and value %q", ErrNotFound, err, val)
 		}
 	}
 

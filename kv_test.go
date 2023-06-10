@@ -30,7 +30,7 @@ func compareSlice(t *testing.T, exp, got []string) {
 
 	for i := 0; i < len(exp); i++ {
 		if exp[i] != got[i] {
-			t.Errorf("expected %q, got %q", exp[i], got[i])
+			t.Errorf("%d: expected %q, got %q", i, exp[i], got[i])
 		}
 	}
 }
