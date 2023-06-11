@@ -56,6 +56,7 @@ func (n *trieNode) addToList(node *trieNode) *trieNode {
 // Removes node from the linked list.
 // Returns the new head (if it has changed).
 // Should be called on the head node.
+// Will loop forever if node is not in the list.
 func (n *trieNode) removeFromList(c byte) *trieNode {
 	curr := n
 	for {
@@ -77,11 +78,6 @@ func (n *trieNode) removeFromList(c byte) *trieNode {
 		}
 
 		curr = curr.next
-
-		if curr == nil {
-			// Node was not found.
-			return nil
-		}
 	}
 }
 
@@ -248,9 +244,12 @@ func (kv *KV[V]) Del(key string) error {
 
 	node.terminal = false
 
-	if node.next == nil {
-		prev.removeFromList(node.c)
-		prev.down[node.c] = nil
+	if node.nextLevelHead == nil && prev != nil {
+		head := prev.nextLevelHead.removeFromList(node.c)
+		if head != nil {
+			prev.nextLevelHead = head
+		}
+		delete(prev.down, node.c)
 	}
 
 	return kv.data.Del(key)
