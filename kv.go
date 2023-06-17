@@ -4,8 +4,15 @@ import (
 	"sync"
 )
 
+// Length of key to preallocate in dfs.
+// It is not a hard limit, but keys longer than this will cause extra allocations.
+const maxKeyLength = 1024
+
 type trieNode struct {
+	// character
 	c byte
+	// depth level
+	d int
 
 	// Nodes down the tree are stored in a map.
 	down map[byte]*trieNode
@@ -125,6 +132,7 @@ func (kv *KV[V]) Set(key string, value V) {
 			// Creating new node.
 			next = &trieNode{
 				c: key[i],
+				d: node.d + 1,
 			}
 			node.down[key[i]] = next
 			if node.nextLevelHead == nil {
@@ -144,14 +152,11 @@ func (kv *KV[V]) Set(key string, value V) {
 	node.terminal = true
 }
 
-type stackItem[V any] struct {
-	node   *trieNode
-	prefix []byte
-}
-
 // DFS starts with last node of the key prefix.
 func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 	res := []V{}
+	key := make([]byte, len(prefix), maxKeyLength)
+	copy(key, prefix)
 
 	// If last node of the prefix is terminal, add it to the result.
 	if node.terminal {
@@ -167,9 +172,14 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		return res, nil
 	}
 
-	stack := make([]stackItem[V], 0, 1024)
-	stack = append(stack, stackItem[V]{node: node.nextLevelHead})
-	var top stackItem[V]
+	stack := make([]*trieNode, 0, 1024)
+	stack = append(stack, node.nextLevelHead)
+	var (
+		top       *trieNode
+		prevDepth int
+		err       error
+		val       V
+	)
 	for {
 		if len(stack) == 0 {
 			break
@@ -178,9 +188,20 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		top = stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		if top.node.terminal {
-			key := append(prefix, top.prefix...)
-			val, err := kv.data.Get(string(append(key, top.node.c)))
+		if top.d > prevDepth {
+			// We have descended to the next level.
+			key = append(key, top.c)
+		} else if top.d < prevDepth {
+			// We have ascended to the previous level.
+			key = key[:len(key)-1]
+			key[len(key)-1] = top.c
+		} else {
+			key[len(key)-1] = top.c
+		}
+		prevDepth = top.d
+
+		if top.terminal {
+			val, err = kv.data.Get(string(key))
 			if err != nil {
 				return nil, err
 			}
@@ -188,16 +209,13 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		}
 
 		// Appending next node of the level to the stack.
-		if top.node.next != nil {
-			stack = append(stack, stackItem[V]{node: top.node.next, prefix: top.prefix})
+		if top.next != nil {
+			stack = append(stack, top.next)
 		}
 
 		// Appending next level head to the top of the stack.
-		if top.node.nextLevelHead != nil {
-			stack = append(stack, stackItem[V]{
-				node:   top.node.nextLevelHead,
-				prefix: append(top.prefix, top.node.c),
-			})
+		if top.nextLevelHead != nil {
+			stack = append(stack, top.nextLevelHead)
 		}
 	}
 
