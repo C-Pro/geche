@@ -6,7 +6,7 @@ import (
 
 // Length of key to preallocate in dfs.
 // It is not a hard limit, but keys longer than this will cause extra allocations.
-const maxKeyLength = 1024
+const maxKeyLength = 512
 
 type trieNode struct {
 	// character
@@ -172,7 +172,7 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		return res, nil
 	}
 
-	stack := make([]*trieNode, 0, 1024)
+	stack := make([]*trieNode, 0, maxKeyLength)
 	stack = append(stack, node.nextLevelHead)
 	var (
 		top       *trieNode
