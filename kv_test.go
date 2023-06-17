@@ -30,7 +30,7 @@ func compareSlice(t *testing.T, exp, got []string) {
 
 	for i := 0; i < len(exp); i++ {
 		if exp[i] != got[i] {
-			t.Errorf("expected %q, got %q", exp[i], got[i])
+			t.Errorf("%d: expected %q, got %q", i, exp[i], got[i])
 		}
 	}
 }
@@ -149,6 +149,28 @@ func TestKVNonexist(t *testing.T) {
 	}
 
 	if len(got) > 0 {
+		t.Errorf("unexpected len %d", len(got))
+	}
+
+	if err := kv.Del("nonexistent"); err != nil {
+		t.Errorf("unexpected error in Del: %v", err)
+	}
+}
+
+func TestKVEmptyKEy(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("", "0")
+	kv.Set("foo1", "1")
+	kv.Set("foo2", "2")
+
+	got, err := kv.ListByPrefix("fo")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	if len(got) > 3 {
 		t.Errorf("unexpected len %d", len(got))
 	}
 }
