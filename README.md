@@ -197,6 +197,8 @@ There are two types of benchmarks:
 * `BenchmarkSet` only times the `Set` operation that allocates all the memory, and usually is the most resource intensive.
 * `BenchmarkEverything` repeatedly does one of three operations (Get/Set/Del). The probability for each type of operation to be executed is 0.9/0.05/0.05 respectively. Each operation is executed on randomly generated key, there are totally 1 million distinct keys, so total cache size will be limited too.
 
+Another benchmark `BenchmarkKVListByPrefix` lists `KV` wrapper's `ListByPrefix` operation. It times getting all values matching particular prefix in a cache with 1 million keys. Benchmark is arranged so each call returns 10 records.
+
 Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface to store any type of values (`AnyCache`), but slower than implementations that use concrete types (`StringCache`) and skip on thread safety (`UnsafeCache`).
 Generic `MapTTLCache` is on par with `AnyCache` but it is to be expected as it does more work keeping linked list for fast invalidation. `RingBuffer` performs the best because all the space it needs is preallocated during the initialization, and actual cache size is limited.
 
@@ -205,24 +207,27 @@ Note that `stringCache`, `unsafeCache`, `anyCache` implementations are unexporte
 The results below are not to be treated as absolute values. Actual cache operation latency will depend on many variables such as CPU speed, key cardinality, number of concurrent operations, whether the allocation happen during the operation or underlying structure already has the allocated space and so on.
 
 ```shell
- $ go test -bench . -benchmem -benchtime=30s
-goos: darwin
-goarch: arm64
+ $ go test -bench=. -benchmem -benchtime=10s .
+goos: linux
+goarch: amd64
 pkg: github.com/c-pro/geche
-BenchmarkSet/MapCache-10  	238400880	       151.4 ns/op	       7 B/op	       0 allocs/op
-BenchmarkSet/StringCache-10         	240488745	       149.7 ns/op	       7 B/op	       0 allocs/op
-BenchmarkSet/UnsafeCache-10         	348324978	       102.9 ns/op	       7 B/op	       0 allocs/op
-BenchmarkSet/MapTTLCache-10         	89931351	       338.2 ns/op	       7 B/op	       0 allocs/op
-BenchmarkSet/RingBuffer-10          	215545424	       166.1 ns/op	       7 B/op	       0 allocs/op
-BenchmarkSet/AnyCache-10            	241277830	       149.4 ns/op	       8 B/op	       1 allocs/op
-BenchmarkEverything/MapCache-10     	333596707	       110.7 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverything/StringCache-10  	327069014	       112.7 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverything/UnsafeCache-10  	535376823	        68.41 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverything/MapTTLCache-10  	222688748	       166.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverything/RingBuffer-10   	671402931	        53.76 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverything/AnyCache-10     	195838436	       195.8 ns/op	       8 B/op	       1 allocs/op
-PASS
-ok  	github.com/c-pro/geche	577.123s
+cpu: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
+BenchmarkSet/MapCache-32        41473179               284.4 ns/op             1 B/op          0 allocs/op
+BenchmarkSet/StringCache-32     64817786               182.5 ns/op             1 B/op          0 allocs/op
+BenchmarkSet/UnsafeCache-32     80224212               125.2 ns/op             1 B/op          0 allocs/op
+BenchmarkSet/MapTTLCache-32     14296934               758.3 ns/op            15 B/op          0 allocs/op
+BenchmarkSet/RingBuffer-32      64152157               244.9 ns/op             0 B/op          0 allocs/op
+BenchmarkSet/KVMapCache-32      10701508              1152 ns/op              10 B/op          0 allocs/op
+BenchmarkSet/AnyCache-32        67699846               288.9 ns/op             2 B/op          0 allocs/op
+BenchmarkEverything/MapCache-32                 100000000              106.7 ns/op             0 B/op          0 allocs/op
+BenchmarkEverything/StringCache-32              100000000              100.3 ns/op             0 B/op          0 allocs/op
+BenchmarkEverything/UnsafeCache-32              135556000               87.31 ns/op            0 B/op          0 allocs/op
+BenchmarkEverything/MapTTLCache-32              100000000              175.6 ns/op             0 B/op          0 allocs/op
+BenchmarkEverything/RingBuffer-32               121507983               94.82 ns/op            0 B/op          0 allocs/op
+BenchmarkEverything/ShardedRingBufferUpdater-32                 32976999               371.6 ns/op            18 B/op          0 allocs/op
+BenchmarkEverything/KVMapCache-32                               90192560               199.9 ns/op             1 B/op          0 allocs/op
+BenchmarkEverything/AnyCache-32                                 100000000              231.1 ns/op             8 B/op          1 allocs/op
+BenchmarkKVListByPrefix-32                                       3167788              3720 ns/op             131 B/op          3 allocs/op
 ```
 
 # Parallel benchmarks
@@ -232,27 +237,31 @@ ok  	github.com/c-pro/geche	577.123s
 I implemented sharding anyway because why not. But it is a separate wrapper, so does not complicate existing codebase.
 
 ```shell
-$ go test -benchtime=30s -benchmem -bench .
-goos: darwin
-goarch: arm64
+$ go test -benchtime=10s -benchmem -bench .
+goos: linux
+goarch: amd64
 pkg: cache_bench
-BenchmarkEverythingParallel/MapCache-10                 332130052              133.3 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/MapTTLCache-10              234690624              205.4 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/RingBuffer-10               441694302               86.82 ns/op            0 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-10            191366336              198.8 ns/op             7 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-10                    367538067              100.7 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/jellydator/ttlcache-10                   136785907              262.4 ns/op            43 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/erni27/imcache-10                        226084180              179.2 ns/op             2 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-10                   466729495               80.03 ns/op           30 B/op          1 allocs/op
-BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-10               193697901              216.5 ns/op             0 B/op          0 allocs/op
-PASS
-ok      cache_bench     496.390s
+cpu: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
+BenchmarkEverythingParallel/MapCache-32                 100000000              170.1 ns/op             0 B/op          0 allocs/op
+BenchmarkEverythingParallel/MapTTLCache-32              90510988               198.9 ns/op             0 B/op          0 allocs/op
+BenchmarkEverythingParallel/RingBuffer-32               85731428               196.8 ns/op             0 B/op          0 allocs/op
+BenchmarkEverythingParallel/ShardedMapCache-32          273706551               43.51 ns/op            0 B/op          0 allocs/op
+BenchmarkEverythingParallel/ShardedMapTTLCache-32               282491904               44.37 ns/op            0 B/op          0 allocs/op
+BenchmarkEverythingParallel/ShardedRingBuffer-32                284756061               40.78 ns/op            0 B/op          0 allocs/op
+BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-32            43165059               294.2 ns/op             7 B/op          0 allocs/op
+BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-32                    186976719               64.51 ns/op            0 B/op          0 allocs/op
+BenchmarkEverythingParallel/github.com/jellydator/ttlcache-32                   29943469               376.3 ns/op            43 B/op          0 allocs/op
+BenchmarkEverythingParallel/github.com/erni27/imcache-32                        531496862               23.35 ns/op           50 B/op          1 allocs/op
+BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-32                   100000000              108.5 ns/op            27 B/op          1 allocs/op
+BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-32               43857675               307.1 ns/op             0 B/op          0 allocs/op
+BenchmarkEverythingParallel/github.com/egregors/kesh-32                         33866130               428.7 ns/op            83 B/op          2 allocs/op
+BenchmarkEverythingParallel/KVMapCache-32                                       43328151               401.2 ns/op           112 B/op          0 allocs/op
 ```
 
 And now on 32 CPU machine we clearly see performance degradation due to lock contention. Sharded implementations are about 4 times faster.
-Notice the Imcache result. Is too good to be true 😅
+Notice the Imcache result. Crazy fast! 😅
 
-KV wrapper result is worse then other caches, but it is expected as it keeps key level ordering on insert and does extra work to cleanup the key in trie on delete.
+KV wrapper result is worse then other caches, but it is expected as it keeps key index allowing prefix search with deterministic order, that other caches do not allow. It updates trie structure on `Set` and does extra work to cleanup the key on `Del`.
 
 ```shell
 $ go test -benchtime=10s -benchmem -bench .
@@ -276,6 +285,5 @@ BenchmarkEverythingParallel/github.com/egregors/kesh-32                      	25
 BenchmarkEverythingParallel/KVMapCache-32                                    	33802629	       478.4 ns/op	     109 B/op	       0 allocs/op
 PASS
 ```
-
 
 Concurrent comparison benchmark is located in a [separate repository](https://github.com/C-Pro/cache-benchmarks) to avoid pulling unnecessary dependencies in the library.
