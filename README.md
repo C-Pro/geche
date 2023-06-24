@@ -156,6 +156,37 @@ This wrapper has some limitations:
 	// Output: [bar bar1 bar2 bar3]
 ```
 
+### Locker
+
+This wrapper is useful when you need to make several operations on the cache atomically. For example you store account balances in the cache and want to transfer some amount from one account to another:
+
+```go
+	locker := NewLocker[int, int](NewMapCache[int, int]())
+    // Acquire RW lock "transaction".
+    tx := locker.Lock()
+
+    balA, _ := tx.Get(accA)
+    balB, _ := tx.Get(accB)
+
+    amount := 100
+
+    balA += amount
+    balB -= amount
+
+    tx.Set(accA, balA)
+    tx.Set(accB, balB)
+
+    // Unlock the cache.
+    tx.Unlock()
+```
+
+The `Locker` itself does not implement `Geche` interface, but `Tx` object returned by `Lock` or `RLock` method does.
+Be careful to follow these rules (will lead to panics):
+* do not use `Set` and `Del` on read-only `Tx` acquired with `RLock`.
+* do not use `Tx` after `Unlock` call.
+* do not `Unlock` `Tx` that was unlocked before.
+And do not forget to `Unlock` the `Tx` object, otherwise it will lead to lock to be held forever.
+
 ## Benchmarks
 
 Test suite contains a couple of benchmarks to compare the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.

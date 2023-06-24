@@ -158,6 +158,10 @@ func BenchmarkEverything(b *testing.B) {
 			"KVMapCache",
 			NewKV[string](NewMapCache[string, string]()),
 		},
+		{
+			"LockerMapCache",
+			NewLocker[string, string](NewMapCache[string, string]()).Lock(),
+		},
 	}
 
 	data := genTestData(10_000_000)
