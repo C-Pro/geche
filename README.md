@@ -187,6 +187,10 @@ Be careful to follow these rules (will lead to panics):
 * do not `Unlock` `Tx` that was unlocked before.
 And do not forget to `Unlock` the `Tx` object, otherwise it will lead to lock to be held forever.
 
+Returned `Tx` object is not a transaction in a sense that it does not
+allow commit/rollback or isolation level higher than READ COMMITTED.
+It only provides a way to do multiple cache operations atomically.
+
 ## Benchmarks
 
 Test suite contains a couple of benchmarks to compare the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.

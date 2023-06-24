@@ -9,7 +9,7 @@ import (
 // that provides Lock() and RLock() methods that return Tx object
 // implementing Geche interface.
 // Returned object is not a transaction in a sense that it does not
-// allow commit/rollback or isolation level higher than READ UNCOMMITTED.
+// allow commit/rollback or isolation level higher than READ COMMITTED.
 // It only provides a way to do multiple cache operations atomically.
 type Locker[K comparable, V any] struct {
 	cache Geche[K, V]
