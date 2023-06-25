@@ -159,6 +159,9 @@ func TestCommon(t *testing.T) {
 		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute, time.Minute) }},
 		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](100) }},
 		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
+		{"LockerMapCache", func() Geche[string, string] {
+			return NewLocker[string, string](NewMapCache[string, string]()).Lock()
+		}},
 		{
 			"ShardedMapCache", func() Geche[string, string] {
 				return NewSharded[string](
