@@ -99,6 +99,9 @@ if err != nil {
 fmt.Println(v)
 ```
 
+`Updater` provides `ListByPrefix` function, but it can be used only if underlying cache supports it (is a `KV` wrapper).
+Otherwize it will panic.
+
 ### Sharding
 
 If you intend to use cache in *higlhy* concurrent manner (16+ cores and 100k+ RPS). It may make sense to shard it.
@@ -140,7 +143,7 @@ Internally `KV` maintains trie structure to store keys to be able to quickly fin
 This wrapper has some limitations:
 * `KV` only supports keys of type `string`.
 * Lexicographical order is maintained on the byte level, so it will work as expected for ASCII strings, but may not work for other encodings.
-* If you wrap `KV` with another wrapper you can't use `ListByPrefix`. Don't do it!
+* `Updater` and `Locker` wrappers provide `ListByPrefix` function, that will call underlying `KV` implementation. But if you wrap `KV` with `Sharded` wrapper, you will loose this functionality. In other words it would not make sense to wrap `KV` with `Sharded` wrapper.
 
 ```go
 	cache := NewMapCache[string, string]()
@@ -188,8 +191,9 @@ Be careful to follow these rules (will lead to panics):
 And do not forget to `Unlock` the `Tx` object, otherwise it will lead to lock to be held forever.
 
 Returned `Tx` object is not a transaction in a sense that it does not
-allow commit/rollback or isolation level higher than READ COMMITTED.
-It only provides a way to do multiple cache operations atomically.
+allow rollback, but it provides atomicity and isolation guarantees.
+
+`Locker` provides `ListByPrefix` function, but it can only be used if underlying cache implementation supports it (is a `KV` wrapper). Otherwize it will panic.
 
 ## Benchmarks
 
