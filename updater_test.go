@@ -215,3 +215,30 @@ func TestUpdaterConcurrent(t *testing.T) {
 		t.Errorf("expected peakCnt to be %d, got %d", poolSize, peakCnt)
 	}
 }
+
+func TestUpdaterListByPrefix(t *testing.T) {
+	imp := NewCacheUpdater[string, string](NewKV[string](NewMapCache[string, string]()), updateFn, 2)
+
+	imp.Set("test9", "test9")
+	imp.Set("test2", "test2")
+	imp.Set("test1", "test1")
+	imp.Set("test3", "test3")
+
+	imp.Del("test2")
+
+	expected := []string{"test1", "test3", "test9"}
+	actual, err := imp.ListByPrefix("test")
+	if err != nil {
+		t.Errorf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, actual)
+}
+
+func TestUpdaterListByPrefixUnsupported(t *testing.T) {
+	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), updateFn, 2)
+
+	if !panics(func() { imp.ListByPrefix("test") }) {
+		t.Error("ListByPrefix expected to panic if underlying cache does not provide ListByPrefix")
+	}
+}

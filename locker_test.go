@@ -123,6 +123,10 @@ func TestLockerRWPanics(t *testing.T) {
 	locker := NewLocker[int, int](NewMapCache[int, int]())
 	tx := locker.Lock()
 
+	if !panics(func() { tx.ListByPrefix("test") }) {
+		t.Errorf("expected panic (ListByPrefix on MapCache)")
+	}
+
 	tx.Unlock()
 	if !panics(func() { tx.Unlock() }) {
 		t.Errorf("expected panic (Unlock on already unlocked)")
@@ -147,4 +151,29 @@ func TestLockerRWPanics(t *testing.T) {
 	if !panics(func() { tx.Snapshot() }) {
 		t.Errorf("expected panic (Snapshot on already unlocked)")
 	}
+
+	if !panics(func() { tx.ListByPrefix("test") }) {
+		t.Errorf("expected panic (ListByPrefix on already unlocked)")
+	}
+}
+
+func TestLockerListByPrefix(t *testing.T) {
+	imp := NewLocker[string, string](NewKV[string](NewMapCache[string, string]()))
+	tx := imp.Lock()
+	defer tx.Unlock()
+
+	tx.Set("test9", "test9")
+	tx.Set("test2", "test2")
+	tx.Set("test1", "test1")
+	tx.Set("test3", "test3")
+
+	tx.Del("test2")
+
+	expected := []string{"test1", "test3", "test9"}
+	actual, err := tx.ListByPrefix("test")
+	if err != nil {
+		t.Errorf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, actual)
 }

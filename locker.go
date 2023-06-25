@@ -117,3 +117,17 @@ func (tx *Tx[K, V]) Len() int {
 	}
 	return tx.cache.Len()
 }
+
+// ListByPrefix should only be called if underlying cache is KV.
+// Otherwise it will panic.
+func (tx *Tx[K, V]) ListByPrefix(prefix string) ([]V, error) {
+	if atomic.LoadInt32(&tx.unlocked) == 1 {
+		panic("cannot use unlocked transaction")
+	}
+	kv, ok := any(tx.cache).(*KV[V])
+	if !ok {
+		panic("cache does not support ListByPrefix")
+	}
+
+	return kv.ListByPrefix(prefix)
+}
