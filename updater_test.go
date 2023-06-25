@@ -224,7 +224,7 @@ func TestUpdaterListByPrefix(t *testing.T) {
 	imp.Set("test1", "test1")
 	imp.Set("test3", "test3")
 
-	imp.Del("test2")
+	_ = imp.Del("test2")
 
 	expected := []string{"test1", "test3", "test9"}
 	actual, err := imp.ListByPrefix("test")
@@ -238,7 +238,7 @@ func TestUpdaterListByPrefix(t *testing.T) {
 func TestUpdaterListByPrefixUnsupported(t *testing.T) {
 	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), updateFn, 2)
 
-	if !panics(func() { imp.ListByPrefix("test") }) {
+	if !panics(func() { _, _ = imp.ListByPrefix("test") }) {
 		t.Error("ListByPrefix expected to panic if underlying cache does not provide ListByPrefix")
 	}
 }
