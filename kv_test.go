@@ -3,6 +3,9 @@ package geche
 import (
 	"errors"
 	"fmt"
+	"math/rand"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -23,7 +26,7 @@ func ExampleNewKV() {
 func compareSlice(t *testing.T, exp, got []string) {
 	t.Helper()
 
-	t.Log(got)
+	// t.Log(got)
 	if len(exp) != len(got) {
 		t.Fatalf("expected length %d, got %d", len(exp), len(got))
 	}
@@ -135,6 +138,122 @@ func TestKVEmptyPrefix(t *testing.T) {
 	}
 
 	compareSlice(t, expected, got)
+}
+
+func TestKVEmptyPrefixDiffLen(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("12345", "12345")
+	kv.Set("123", "123")
+	kv.Set("3", "3")
+	kv.Set("2", "2")
+	kv.Set("33333", "33333")
+	kv.Set("1", "1")
+
+	expected := []string{"1", "123", "12345", "2", "3", "33333"}
+
+	got, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, got)
+}
+
+func genRandomString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte(rand.Intn(256))
+	}
+	return string(b)
+}
+
+func TestKVEmptyPrefixFuzz(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	set := map[string]struct{}{}
+	for i := 0; i < 10000; i++ {
+		key := genRandomString(rand.Intn(300) + 1)
+		set[key] = struct{}{}
+		kv.Set(key, key)
+	}
+
+	expected := []string{}
+	for key := range set {
+		expected = append(expected, key)
+	}
+	sort.Strings(expected)
+
+	got, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, got)
+}
+
+// This test creates 10k random KV pairs. Each key is prefixed with one of 10
+// random prefixes. Then it deletes 10% of keys and checks that ListByPrefix
+// returns correct results.
+func TestKVPrefixFuzz(t *testing.T) {
+	prefixes := []string{}
+	for i := 0; i < 10; i++ {
+		prefixes = append(prefixes, genRandomString(rand.Intn(20)+1))
+	}
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	set := map[string]struct{}{}
+	for i := 0; i < 10000; i++ {
+		prefix := prefixes[rand.Intn(len(prefixes))]
+		pl := rand.Intn(len(prefix))
+		key := prefix[:pl] + genRandomString(rand.Intn(300)+1)
+		set[key] = struct{}{}
+		kv.Set(key, key)
+	}
+
+	// Delete 10% of keys.
+	for key := range set {
+		if rand.Float64() < 0.1 {
+			delete(set, key)
+			_ = kv.Del(key)
+		}
+	}
+
+	expected := []string{}
+	for key := range set {
+		expected = append(expected, key)
+	}
+	sort.Strings(expected)
+
+	got, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, got)
+
+	for i := 1; i < len(prefixes); i++ {
+		prefix := prefixes[i]
+		for j := 1; j < len(prefix); j++ {
+			q := prefix[:j]
+			expected2 := make([]string, 0, len(expected))
+			for _, key := range expected {
+				if strings.HasPrefix(key, q) {
+					expected2 = append(expected2, key)
+				}
+			}
+
+			got, err := kv.ListByPrefix(q)
+			if err != nil {
+				t.Fatalf("unexpected error in ListByPrefix: %v", err)
+			}
+
+			compareSlice(t, expected2, got)
+		}
+	}
 }
 
 func TestKVNonexist(t *testing.T) {
