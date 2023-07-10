@@ -193,7 +193,7 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 			key = append(key, top.c)
 		} else if top.d < prevDepth {
 			// We have ascended to the previous level.
-			key = key[:len(key)-1]
+			key = key[:len(key)-(prevDepth-top.d)]
 			key[len(key)-1] = top.c
 		} else {
 			key[len(key)-1] = top.c
