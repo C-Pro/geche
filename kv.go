@@ -62,9 +62,10 @@ func (n *trieNode) addToList(node *trieNode) *trieNode {
 
 // Removes node from the linked list.
 // Returns the new head (if it has changed).
+// Returns true if the list is now empty.
 // Should be called on the head node.
 // Will loop forever if node is not in the list.
-func (n *trieNode) removeFromList(c byte) *trieNode {
+func (n *trieNode) removeFromList(c byte) (*trieNode, bool) {
 	curr := n
 	for {
 		if curr.c == c {
@@ -78,10 +79,14 @@ func (n *trieNode) removeFromList(c byte) *trieNode {
 
 			if curr.prev == nil {
 				// Head has changed.
-				return curr.next
+				if curr.next == nil {
+					// List is now empty.
+					return nil, true
+				}
+				return curr.next, false
 			}
 
-			return nil
+			return nil, false
 		}
 
 		curr = curr.next
@@ -249,25 +254,37 @@ func (kv *KV[V]) Del(key string) error {
 	defer kv.mux.Unlock()
 
 	node := kv.trie
-	var prev *trieNode
+	stack := []*trieNode{}
 	for i := 0; i < len(key); i++ {
 		next := node.down[key[i]]
 		if next == nil {
-			return nil
+			// If we are here, the key does not exist.
+			return kv.data.Del(key)
 		}
 
-		prev = node
+		stack = append(stack, node)
 		node = next
 	}
 
 	node.terminal = false
 
-	if node.nextLevelHead == nil && prev != nil {
-		head := prev.nextLevelHead.removeFromList(node.c)
-		if head != nil {
-			prev.nextLevelHead = head
+	// Go back the stack removing nodes with no descendants.
+	for i := len(stack) - 1; i >= 0; i-- {
+		prev := stack[i]
+		stack = stack[:i]
+		if node.nextLevelHead == nil {
+			head, empty := prev.nextLevelHead.removeFromList(node.c)
+			if head != nil || (head == nil && empty) {
+				prev.nextLevelHead = head
+			}
+			delete(prev.down, node.c)
 		}
-		delete(prev.down, node.c)
+
+		if prev.terminal || len(prev.down) > 0 && prev == kv.trie {
+			break
+		}
+
+		node = prev
 	}
 
 	return kv.data.Del(key)
