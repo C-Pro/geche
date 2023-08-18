@@ -379,7 +379,7 @@ func TestKVDel(t *testing.T) {
 	kv := NewKV[string](cache)
 
 	kv.Set("foo", "bar")
-	kv.Del("foo")
+	_ = kv.Del("foo")
 
 	if len(kv.trie.down) > 0 {
 		t.Error("trie is not empty")
@@ -387,7 +387,7 @@ func TestKVDel(t *testing.T) {
 
 	kv.Set("fo", "bar")
 	kv.Set("food", "bar")
-	kv.Del("food")
+	_ = kv.Del("food")
 
 	if len(kv.trie.down) != 1 {
 		t.Errorf("expectedf root trie to have 1 element, got %d", len(kv.trie.down))
