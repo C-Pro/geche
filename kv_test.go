@@ -351,7 +351,7 @@ func TestKVAlloc(t *testing.T) {
 
 	if keys, err := kv.ListByPrefix(""); err != nil {
 		for _, key := range keys {
-			kv.Del(key)
+			_ = kv.Del(key)
 		}
 	}
 
@@ -359,7 +359,9 @@ func TestKVAlloc(t *testing.T) {
 	runtime.ReadMemStats(&mAfter)
 	t.Logf("memIncreaseAfterDel: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
 
-	if mAfter.HeapAlloc-mBefore.HeapAlloc > uint64(rawDataLen/10) {
-		t.Errorf("memory increase is too big")
+	if mAfter.HeapAlloc > mBefore.HeapAlloc {
+		if mAfter.HeapAlloc-mBefore.HeapAlloc > uint64(rawDataLen/10) {
+			t.Errorf("memory increase is too big")
+		}
 	}
 }
