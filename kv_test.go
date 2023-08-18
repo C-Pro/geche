@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -323,4 +324,42 @@ func (m *MockErrCache) Get(key string) (string, error) {
 		return "", errors.New("wow an error")
 	}
 	return "", nil
+}
+
+func TestKVAlloc(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	var (
+		mBefore, mAfter runtime.MemStats
+		rawDataLen      int64
+	)
+	runtime.GC()
+	runtime.ReadMemStats(&mBefore)
+
+	for i := 0; i < 10000; i++ {
+		key := genRandomString(rand.Intn(300) + 1)
+		rawDataLen += int64(len(key) * 2)
+		kv.Set(key, key)
+	}
+
+	runtime.GC()
+	runtime.ReadMemStats(&mAfter)
+	t.Logf("rawDataLen: %d", rawDataLen)
+	t.Logf("memIncrease: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
+	t.Logf("memIncreaseRatio: %d", int(float64(mAfter.HeapAlloc-mBefore.HeapAlloc)/float64(rawDataLen)))
+
+	if keys, err := kv.ListByPrefix(""); err != nil {
+		for _, key := range keys {
+			kv.Del(key)
+		}
+	}
+
+	runtime.GC()
+	runtime.ReadMemStats(&mAfter)
+	t.Logf("memIncreaseAfterDel: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
+
+	if mAfter.HeapAlloc-mBefore.HeapAlloc > uint64(rawDataLen/10) {
+		t.Errorf("memory increase is too big")
+	}
 }
