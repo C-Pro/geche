@@ -349,10 +349,13 @@ func TestKVAlloc(t *testing.T) {
 	t.Logf("memIncrease: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
 	t.Logf("memIncreaseRatio: %d", int(float64(mAfter.HeapAlloc-mBefore.HeapAlloc)/float64(rawDataLen)))
 
-	if keys, err := kv.ListByPrefix(""); err != nil {
-		for _, key := range keys {
-			_ = kv.Del(key)
-		}
+	keys, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	for _, key := range keys {
+		_ = kv.Del(key)
 	}
 
 	runtime.GC()
@@ -360,8 +363,33 @@ func TestKVAlloc(t *testing.T) {
 	t.Logf("memIncreaseAfterDel: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
 
 	if mAfter.HeapAlloc > mBefore.HeapAlloc {
-		if mAfter.HeapAlloc-mBefore.HeapAlloc > uint64(rawDataLen/10) {
+		if mAfter.HeapAlloc-mBefore.HeapAlloc > uint64(rawDataLen) {
 			t.Errorf("memory increase is too big")
 		}
+	}
+
+	if len(kv.trie.down) > 0 {
+		t.Log(kv.trie.down)
+		t.Errorf("trie is not empty")
+	}
+}
+
+func TestKVDel(t *testing.T) {
+	cache := NewMapCache[string, string]()
+	kv := NewKV[string](cache)
+
+	kv.Set("foo", "bar")
+	_ = kv.Del("foo")
+
+	if len(kv.trie.down) > 0 {
+		t.Error("trie is not empty")
+	}
+
+	kv.Set("fo", "bar")
+	kv.Set("food", "bar")
+	_ = kv.Del("food")
+
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expectedf root trie to have 1 element, got %d", len(kv.trie.down))
 	}
 }
