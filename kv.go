@@ -9,9 +9,9 @@ import (
 const maxKeyLength = 512
 
 type trieNode struct {
-	// character
-	c byte
-	// depth level
+	// One byte for node, one or more for a leaf.
+	suffix []byte
+	// Node depth level.
 	d int
 
 	// Nodes down the tree are stored in a map.
@@ -33,7 +33,7 @@ type trieNode struct {
 func (n *trieNode) addToList(node *trieNode) *trieNode {
 	curr := n
 	for {
-		if node.c < curr.c {
+		if node.suffix[0] < curr.suffix[0] {
 			node.prev = curr.prev
 			node.next = curr
 			curr.prev = node
@@ -68,7 +68,7 @@ func (n *trieNode) addToList(node *trieNode) *trieNode {
 func (n *trieNode) removeFromList(c byte) (*trieNode, bool) {
 	curr := n
 	for {
-		if curr.c == c {
+		if curr.suffix[0] == c {
 			if curr.prev != nil {
 				curr.prev.next = curr.next
 			}
@@ -136,8 +136,8 @@ func (kv *KV[V]) Set(key string, value V) {
 		if next == nil {
 			// Creating new node.
 			next = &trieNode{
-				c: key[i],
-				d: node.d + 1,
+				suffix: []byte{key[i]},
+				d:      node.d + 1,
 			}
 			node.down[key[i]] = next
 			if node.nextLevelHead == nil {
@@ -195,13 +195,13 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 
 		if top.d > prevDepth {
 			// We have descended to the next level.
-			key = append(key, top.c)
+			key = append(key, top.suffix[0])
 		} else if top.d < prevDepth {
 			// We have ascended to the previous level.
 			key = key[:len(key)-(prevDepth-top.d)]
-			key[len(key)-1] = top.c
+			key[len(key)-1] = top.suffix[0]
 		} else {
-			key[len(key)-1] = top.c
+			key[len(key)-1] = top.suffix[0]
 		}
 		prevDepth = top.d
 
@@ -273,11 +273,11 @@ func (kv *KV[V]) Del(key string) error {
 		prev := stack[i]
 		stack = stack[:i]
 		if node.nextLevelHead == nil {
-			head, empty := prev.nextLevelHead.removeFromList(node.c)
+			head, empty := prev.nextLevelHead.removeFromList(node.suffix[0])
 			if head != nil || (head == nil && empty) {
 				prev.nextLevelHead = head
 			}
-			delete(prev.down, node.c)
+			delete(prev.down, node.suffix[0])
 		}
 
 		if prev.terminal || len(prev.down) > 0 && prev == kv.trie {

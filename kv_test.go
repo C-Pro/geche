@@ -326,6 +326,17 @@ func (m *MockErrCache) Get(key string) (string, error) {
 	return "", nil
 }
 
+/*
+BEFORE:
+go test -v -run=TestKVAlloc
+=== RUN   TestKVAlloc
+    kv_test.go:348: rawDataLen: 30172076
+    kv_test.go:349: memIncrease: 3125310952
+    kv_test.go:350: memIncreaseRatio: 103
+    kv_test.go:363: memIncreaseAfterDel: 9452400
+--- PASS: TestKVAlloc (3.07s)
+*/
+
 func TestKVAlloc(t *testing.T) {
 	cache := NewMapCache[string, string]()
 	kv := NewKV[string](cache)
@@ -337,7 +348,7 @@ func TestKVAlloc(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&mBefore)
 
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 100000; i++ {
 		key := genRandomString(rand.Intn(300) + 1)
 		rawDataLen += int64(len(key) * 2)
 		kv.Set(key, key)
