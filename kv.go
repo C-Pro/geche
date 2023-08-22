@@ -127,16 +127,22 @@ func (kv *KV[V]) Set(key string, value V) {
 
 	node := kv.trie
 	for i := 0; i < len(key); i++ {
+		var next *trieNode
 		if node.down == nil {
 			// Creating new level.
 			node.down = make(map[byte]*trieNode)
+		} else {
+			next = node.down[key[i]]
 		}
 
-		next := node.down[key[i]]
+		if next != nil && len(next.suffix) > 1 {
+			// split the node
+		}
+
 		if next == nil {
 			// Creating new node.
 			next = &trieNode{
-				suffix: []byte{key[i]},
+				suffix: []byte(key[i:]),
 				d:      node.d + 1,
 			}
 			node.down[key[i]] = next
@@ -149,6 +155,8 @@ func (kv *KV[V]) Set(key string, value V) {
 					node.nextLevelHead = head
 				}
 			}
+			node = next
+			break
 		}
 
 		node = next
