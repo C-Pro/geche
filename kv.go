@@ -9,8 +9,8 @@ import (
 const maxKeyLength = 512
 
 type trieNode struct {
-	// character
-	c byte
+	// Node suffix. Single byte for most nodes, but can be longer for tail node.
+	b []byte
 	// depth level
 	d int
 
@@ -33,7 +33,7 @@ type trieNode struct {
 func (n *trieNode) addToList(node *trieNode) *trieNode {
 	curr := n
 	for {
-		if node.c < curr.c {
+		if node.b[0] < curr.b[0] {
 			node.prev = curr.prev
 			node.next = curr
 			curr.prev = node
@@ -68,7 +68,7 @@ func (n *trieNode) addToList(node *trieNode) *trieNode {
 func (n *trieNode) removeFromList(c byte) (*trieNode, bool) {
 	curr := n
 	for {
-		if curr.c == c {
+		if curr.b[0] == c {
 			if curr.prev != nil {
 				curr.prev.next = curr.next
 			}
@@ -125,21 +125,22 @@ func (kv *KV[V]) Set(key string, value V) {
 		return
 	}
 
+	keyb := []byte(key)
 	node := kv.trie
-	for i := 0; i < len(key); i++ {
+	for len(keyb) > 0 {
 		if node.down == nil {
 			// Creating new level.
 			node.down = make(map[byte]*trieNode)
 		}
 
-		next := node.down[key[i]]
+		next := node.down[keyb[0]]
 		if next == nil {
 			// Creating new node.
 			next = &trieNode{
-				c: key[i],
+				b: keyb,
 				d: node.d + 1,
 			}
-			node.down[key[i]] = next
+			node.down[keyb[0]] = next
 			if node.nextLevelHead == nil {
 				node.nextLevelHead = next
 			} else {
@@ -149,12 +150,98 @@ func (kv *KV[V]) Set(key string, value V) {
 					node.nextLevelHead = head
 				}
 			}
+		} else if len(next.b) == 1 {
+			// Single byte nodes are a simple case.
+			keyb = keyb[1:]
+		} else {
+			// Multi byte nodes require splitting.
+
+			// Removing node from the linked list.
+			head, _ := node.nextLevelHead.removeFromList(keyb[0])
+			if head != nil {
+				node.nextLevelHead = head
+			}
+
+			commonPrefixLen := commonPrefixLen(keyb, next.b)
+			for i := 0; i < commonPrefixLen; i++ {
+				// Creating new node.
+				newNode := &trieNode{
+					b:    []byte{keyb[i]},
+					d:    node.d + 1,
+					down: make(map[byte]*trieNode),
+				}
+				node.down[keyb[0]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+
+				node = newNode
+			}
+
+			// Adding removed node back.
+			if commonPrefixLen < len(next.b) {
+				// Creating new node.
+				newNode := &trieNode{
+					b:        next.b[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[next.b[commonPrefixLen]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+
+				//???next.b = next.b[:commonPrefixLen]
+			}
+
+			// Adding new tail node.
+			if commonPrefixLen < len(keyb) {
+				newNode := &trieNode{
+					b:        keyb[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[keyb[commonPrefixLen]] = newNode
+				head := node.nextLevelHead.addToList(newNode)
+				if head != nil {
+					node.nextLevelHead = head
+				}
+			}
+
+			if commonPrefixLen == len(keyb) ||
+				commonPrefixLen == len(next.b) {
+				node.terminal = true
+				return
+			}
+
 		}
 
+		keyb = keyb[commonPrefixLen(keyb, next.b):]
 		node = next
 	}
 
 	node.terminal = true
+}
+
+func commonPrefixLen(a, b []byte) int {
+	i := 0
+	for ; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+
+	return i
 }
 
 // DFS starts with last node of the key prefix.
@@ -195,13 +282,13 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 
 		if top.d > prevDepth {
 			// We have descended to the next level.
-			key = append(key, top.c)
+			key = append(key, top.b[0])
 		} else if top.d < prevDepth {
 			// We have ascended to the previous level.
 			key = key[:len(key)-(prevDepth-top.d)]
-			key[len(key)-1] = top.c
+			key[len(key)-1] = top.b[0]
 		} else {
-			key[len(key)-1] = top.c
+			key[len(key)-1] = top.b[0]
 		}
 		prevDepth = top.d
 
@@ -273,11 +360,11 @@ func (kv *KV[V]) Del(key string) error {
 		prev := stack[i]
 		stack = stack[:i]
 		if node.nextLevelHead == nil {
-			head, empty := prev.nextLevelHead.removeFromList(node.c)
+			head, empty := prev.nextLevelHead.removeFromList(node.b[0])
 			if head != nil || (head == nil && empty) {
 				prev.nextLevelHead = head
 			}
-			delete(prev.down, node.c)
+			delete(prev.down, node.b[0])
 		}
 
 		if prev.terminal || len(prev.down) > 0 && prev == kv.trie {
