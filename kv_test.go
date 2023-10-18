@@ -338,7 +338,7 @@ func TestKVAlloc(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&mBefore)
 
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 100000; i++ {
 		key := genRandomString(rand.Intn(300) + 1)
 		rawDataLen += int64(len(key) * 2)
 		kv.Set(key, key)
@@ -348,7 +348,7 @@ func TestKVAlloc(t *testing.T) {
 	runtime.ReadMemStats(&mAfter)
 	t.Logf("rawDataLen: %d", rawDataLen)
 	t.Logf("memIncrease: %d", mAfter.HeapAlloc-mBefore.HeapAlloc)
-	t.Logf("memIncreaseRatio: %d", int(float64(mAfter.HeapAlloc-mBefore.HeapAlloc)/float64(rawDataLen)))
+	t.Logf("memIncreaseRatio: %0.1f", float64(mAfter.HeapAlloc-mBefore.HeapAlloc)/float64(rawDataLen))
 
 	keys, err := kv.ListByPrefix("")
 	if err != nil {
@@ -372,6 +372,10 @@ func TestKVAlloc(t *testing.T) {
 	if len(kv.trie.down) > 0 {
 		t.Log(kv.trie.down)
 		t.Errorf("trie is not empty")
+	}
+
+	if kv.data.Len() > 0 {
+		t.Errorf("data is not empty")
 	}
 }
 
@@ -576,7 +580,7 @@ func TestSetTwoDepthReverseOrder(t *testing.T) {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
 	if len(values) != 2 {
-		t.Errorf("expected len %d, got %d", 2, len(values))
+		t.Errorf("expected len %d, got %d (%v)", 2, len(values), values)
 	}
 	if values[0] != "test1" {
 		t.Errorf("expected %q, got %q", "test1", values[0])
@@ -584,4 +588,83 @@ func TestSetTwoDepthReverseOrder(t *testing.T) {
 	if values[1] != "test2" {
 		t.Errorf("expected %q, got %q", "test2", values[0])
 	}
+}
+
+func TestSetAppendTail(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("ab", "test2")
+	kv.Set("abc", "test1")
+
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expected root node to have 1 child, got %d", len(kv.trie.down))
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead == nil {
+		t.Errorf("expected root node to have nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.b, []byte("a")) {
+		t.Errorf("expected nextLevelHead.b to be %q, got %q", "a", kv.trie.nextLevelHead.b)
+	}
+	if kv.trie.nextLevelHead.next != nil {
+		t.Error("expected nextLevelHead.next to be nil")
+	}
+	if len(kv.trie.nextLevelHead.down) != 1 {
+		t.Errorf("expected nextLevelHead.down to have 1 element, got %d", len(kv.trie.nextLevelHead.down))
+	}
+
+	values, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+	if len(values) != 2 {
+		t.Errorf("expected len %d, got %d (%v)", 2, len(values), values)
+	}
+	if values[0] != "test2" {
+		t.Errorf("expected %q, got %q", "test2", values[0])
+	}
+	if values[1] != "test1" {
+		t.Errorf("expected %q, got %q", "test1", values[0])
+	}
+}
+
+func TestSet3(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("ab", "test2")
+	kv.Set("abc", "test1")
+	kv.Set("a", "test4")
+
+	values, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	expected := []string{
+		"test4", "test2", "test1",
+	}
+
+	compareSlice(t, expected, values)
+}
+
+func TestSet4(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("ab", "test2")
+	kv.Set("abc", "test1")
+	kv.Set("abz", "test4")
+
+	values, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	expected := []string{
+		"test2", "test1", "test4",
+	}
+
+	t.Log(values)
+	compareSlice(t, expected, values)
 }

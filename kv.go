@@ -152,13 +152,15 @@ func (kv *KV[V]) Set(key string, value V) {
 			}
 		} else if len(next.b) == 1 {
 			// Single byte nodes are a simple case.
-			keyb = keyb[1:]
+			// keyb = keyb[1:]
 		} else {
 			// Multi byte nodes require splitting.
 
 			// Removing node from the linked list.
-			head, _ := node.nextLevelHead.removeFromList(keyb[0])
-			if head != nil {
+			head, empty := node.nextLevelHead.removeFromList(keyb[0])
+			if empty {
+				node.nextLevelHead = nil
+			} else if head != nil {
 				node.nextLevelHead = head
 			}
 
@@ -170,7 +172,7 @@ func (kv *KV[V]) Set(key string, value V) {
 					d:    node.d + 1,
 					down: make(map[byte]*trieNode),
 				}
-				node.down[keyb[0]] = newNode
+				node.down[keyb[i]] = newNode
 				if node.nextLevelHead == nil {
 					node.nextLevelHead = newNode
 				} else {
@@ -180,11 +182,16 @@ func (kv *KV[V]) Set(key string, value V) {
 					}
 				}
 
+				if i == commonPrefixLen-1 {
+					// Last node is either end of the new key or existing node.
+					// In both cases it is terminal.
+					newNode.terminal = true
+				}
 				node = newNode
 			}
 
 			// Adding removed node back.
-			if commonPrefixLen < len(next.b) {
+			if len(next.b) > commonPrefixLen {
 				// Creating new node.
 				newNode := &trieNode{
 					b:        next.b[commonPrefixLen:],
@@ -201,29 +208,31 @@ func (kv *KV[V]) Set(key string, value V) {
 					}
 				}
 
-				//???next.b = next.b[:commonPrefixLen]
+				return
 			}
 
 			// Adding new tail node.
-			if commonPrefixLen < len(keyb) {
+			if len(keyb) > commonPrefixLen {
 				newNode := &trieNode{
 					b:        keyb[commonPrefixLen:],
 					d:        node.d + 1,
 					terminal: true,
 				}
 				node.down[keyb[commonPrefixLen]] = newNode
-				head := node.nextLevelHead.addToList(newNode)
-				if head != nil {
-					node.nextLevelHead = head
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
 				}
-			}
 
-			if commonPrefixLen == len(keyb) ||
-				commonPrefixLen == len(next.b) {
-				node.terminal = true
 				return
 			}
 
+			keyb = keyb[commonPrefixLen:]
+			continue
 		}
 
 		keyb = keyb[commonPrefixLen(keyb, next.b):]
