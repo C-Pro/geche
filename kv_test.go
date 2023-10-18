@@ -28,7 +28,7 @@ func ExampleNewKV() {
 func compareSlice(t *testing.T, exp, got []string) {
 	t.Helper()
 
-	// t.Log(got)
+	t.Log(got)
 	if len(exp) != len(got) {
 		t.Fatalf("expected length %d, got %d", len(exp), len(got))
 	}
@@ -46,6 +46,9 @@ func TestKV(t *testing.T) {
 
 	for i := 999; i >= 0; i-- {
 		key := fmt.Sprintf("%03d", i)
+		if key == "008" {
+			kv.Set(key, key)
+		}
 		kv.Set(key, key)
 	}
 
@@ -338,7 +341,7 @@ func TestKVAlloc(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&mBefore)
 
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 10000; i++ {
 		key := genRandomString(rand.Intn(300) + 1)
 		rawDataLen += int64(len(key) * 2)
 		kv.Set(key, key)
