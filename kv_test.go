@@ -671,3 +671,71 @@ func TestSet4(t *testing.T) {
 	t.Log(values)
 	compareSlice(t, expected, values)
 }
+
+func TestSet5(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("abra", "test2")
+	kv.Set("cadabra", "test1")
+	kv.Set("abracadabra", "test4")
+
+	values, err := kv.ListByPrefix("cad")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	expected := []string{
+		"test1",
+	}
+
+	t.Log(values)
+	compareSlice(t, expected, values)
+}
+
+func FuzzSetListByPrefix(f *testing.F) {
+	examples := [][]string{
+		{"", "", "", ""},
+		{"a", "a", "a", ""},
+		{"a", "a", "a", "b"},
+		{"ab", "ac", "abc", "a"},
+		{"abra", "cadabra", "abracadabra", "cad"},
+		{"abra", "cadabra", "abracadabra", "ab"},
+		{"abcd", "abz", "ac", "a"},
+		{"a", "abc", "abcd", "a"},
+	}
+
+	for _, example := range examples {
+		f.Add(example[0], example[1], example[2], example[3])
+	}
+
+	f.Fuzz(func(t *testing.T, k1, k2, k3, prefix string) {
+		golden := []string{
+			k1, k2, k3,
+		}
+		kv := NewKV[string](NewMapCache[string, string]())
+		for _, key := range golden {
+			kv.Set(key, key)
+		}
+
+		sort.Strings(golden)
+
+		expect := make([]string, 0, len(golden))
+
+		seen := map[string]struct{}{}
+		for _, s := range golden {
+			if _, ok := seen[s]; !ok && strings.HasPrefix(s, prefix) {
+				expect = append(expect, s)
+				seen[s] = struct{}{}
+			}
+		}
+
+		got, err := kv.ListByPrefix(prefix)
+		if err != nil {
+			t.Fatalf("unexpected error in ListByPrefix: %v", err)
+		}
+
+		t.Logf("params: (%q, %q, %q, %q)", k1, k2, k3, prefix)
+		t.Logf("got: %v", got)
+
+		compareSlice(t, expect, got)
+	})
+}

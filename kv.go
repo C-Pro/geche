@@ -334,7 +334,7 @@ func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
 		if next == nil {
 			return nil, nil
 		}
-		if bytes.Equal(next.b, []byte(prefix)[i:]) {
+		if bytes.Equal(next.b[:len(prefix)-i], []byte(prefix)[i:]) {
 			return kv.dfs(next, []byte(prefix))
 		}
 		node = next
