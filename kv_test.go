@@ -28,8 +28,9 @@ func ExampleNewKV() {
 func compareSlice(t *testing.T, exp, got []string) {
 	t.Helper()
 
-	t.Log(got)
 	if len(exp) != len(got) {
+		t.Logf("expect: %v", exp)
+		t.Logf("got: %v", got)
 		t.Fatalf("expected length %d, got %d", len(exp), len(got))
 	}
 
@@ -169,7 +170,7 @@ func TestKVEmptyPrefixDiffLen(t *testing.T) {
 func genRandomString(n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = byte(rand.Intn(256))
+		b[i] = byte(rand.Intn(26) + int(byte('a')))
 	}
 	return string(b)
 }
@@ -738,4 +739,106 @@ func FuzzSetListByPrefix(f *testing.F) {
 
 		compareSlice(t, expect, got)
 	})
+}
+
+func TestKVDelNoprefix(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("hu", "hu")
+	kv.Del("h")
+	res, err := kv.Get("hu")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+	if res != "hu" {
+		t.Errorf("expected %q, got %q", "hu", res)
+	}
+	l, err := kv.ListByPrefix("")
+	if err != nil {
+		t.Errorf("unexpected error in ListByPrefix: %v", err)
+	}
+	if len(l) != 1 {
+		t.Errorf("expected len 1, got %d", len(l))
+	}
+
+	if l[0] != "hu" {
+		t.Errorf("expected %q, got %q", "hu", res)
+	}
+}
+
+func FuzzTask(f *testing.F) {
+	examples := []struct {
+		seed   int64
+		prefix string
+	}{
+		{0, ""},
+		{439, "x"},
+		{2, "ab"},
+		{4928589, " "},
+		{93, "1"},
+		{1994, ""},
+		{185, "P"},
+	}
+	for _, example := range examples {
+		f.Add(example.seed, example.prefix)
+	}
+
+	f.Fuzz(func(t *testing.T, seed int64, prefix string) {
+		kv := NewKV[string](NewMapCache[string, string]())
+		task := randTask(seed)
+		golden := make(map[string]struct{}, len(task))
+		for _, cmd := range task {
+			if cmd.action == "Set" {
+				kv.Set(cmd.key, cmd.key)
+				golden[cmd.key] = struct{}{}
+			} else if cmd.action == "Del" {
+				kv.Del(cmd.key)
+				delete(golden, cmd.key)
+			}
+		}
+
+		goldenList := make([]string, 0, len(golden))
+		for k := range golden {
+			if strings.HasPrefix(k, prefix) {
+				goldenList = append(goldenList, k)
+			}
+		}
+		sort.Strings(goldenList)
+
+		got, err := kv.ListByPrefix(prefix)
+		if err != nil {
+			t.Fatalf("unexpected error in ListByPrefix: %v", err)
+		}
+
+		t.Logf("seed: %d, task %v, prefix: %q", seed, task, prefix)
+		compareSlice(t, goldenList, got)
+	})
+}
+
+type command struct {
+	action string
+	key    string
+}
+
+const (
+	taskSize      = 5
+	taskMinKeyLen = 1
+	taskMaxKeyLen = 3
+)
+
+func randTask(seed int64) []command {
+	task := make([]command, taskSize)
+	r := rand.New(rand.NewSource(seed))
+
+	for i := 0; i < len(task); i++ {
+		task[i].action = "Set"
+		if r.Float64() < 0.1 {
+			task[i].action = "Del"
+		}
+		task[i].key = genRandomString(
+			r.Intn(taskMaxKeyLen-taskMinKeyLen) +
+				taskMinKeyLen,
+		)
+	}
+
+	return task
 }

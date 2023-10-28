@@ -334,8 +334,13 @@ func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
 		if next == nil {
 			return nil, nil
 		}
-		if bytes.Equal(next.b[:len(prefix)-i], []byte(prefix)[i:]) {
-			return kv.dfs(next, []byte(prefix))
+		// If we reached a multibyte tail node, we can return its value,
+		// since tail nodes have no descendants.
+		if len(next.b) > 1 && len(next.b) >= len(prefix)-i {
+			if bytes.Equal(next.b[:len(prefix)-i], []byte(prefix)[i:]) {
+				v, err := kv.data.Get(prefix + string(next.b[len(prefix)-i:]))
+				return []V{v}, err
+			}
 		}
 		node = next
 	}
