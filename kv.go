@@ -360,6 +360,7 @@ func (kv *KV[V]) Del(key string) error {
 
 	node := kv.trie
 	stack := []*trieNode{}
+	found := false
 	for i := 0; i < len(key); i++ {
 		next := node.down[key[i]]
 		if next == nil {
@@ -370,10 +371,18 @@ func (kv *KV[V]) Del(key string) error {
 		stack = append(stack, node)
 		node = next
 		if bytes.Equal(node.b, []byte(key)[i:]) {
+			if node.terminal {
+				found = true
+			}
 			break
 		}
 	}
 
+	if !found {
+		// If we are here, the key does not exist.
+		return kv.data.Del(key)
+	}
+	
 	node.terminal = false
 
 	// Go back the stack removing nodes with no descendants.

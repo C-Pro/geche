@@ -637,6 +637,8 @@ func TestSetAppendTail(t *testing.T) {
 }
 
 func TestSet3(t *testing.T) {
+	// Some tests like this here are white-box ones to cover specific code paths,
+	// or to check for regressions of fixed issues found by fuzzing.
 	kv := NewKV[string](NewMapCache[string, string]())
 	kv.Set("ab", "test2")
 	kv.Set("abc", "test1")
@@ -692,7 +694,8 @@ func TestSet5(t *testing.T) {
 	compareSlice(t, expected, values)
 }
 
-func FuzzSetListByPrefix(f *testing.F) {
+func FuzzKVSetListByPrefix(f *testing.F) {
+	// Simple fuzzing test adding 3 keys then listing by prefix.
 	examples := [][]string{
 		{"", "", "", ""},
 		{"a", "a", "a", ""},
@@ -757,7 +760,7 @@ func TestKVDelNoprefix(t *testing.T) {
 		t.Errorf("unexpected error in ListByPrefix: %v", err)
 	}
 	if len(l) != 1 {
-		t.Errorf("expected len 1, got %d", len(l))
+		t.Fatalf("expected len 1, got %d", len(l))
 	}
 
 	if l[0] != "hu" {
@@ -765,7 +768,10 @@ func TestKVDelNoprefix(t *testing.T) {
 	}
 }
 
-func FuzzTask(f *testing.F) {
+func FuzzMonkey(f *testing.F) {
+	// More elaborate fuzzing test. It creates a random task of 50 Set/Del
+	// commands to be executed on a KV. Then it checks that ListByPrefix
+	// returns correct results.
 	examples := []struct {
 		seed   int64
 		prefix string
@@ -796,21 +802,35 @@ func FuzzTask(f *testing.F) {
 			}
 		}
 
-		goldenList := make([]string, 0, len(golden))
+		goldenFiltered := make([]string, 0, len(golden))
 		for k := range golden {
 			if strings.HasPrefix(k, prefix) {
-				goldenList = append(goldenList, k)
+				goldenFiltered = append(goldenFiltered, k)
 			}
 		}
-		sort.Strings(goldenList)
+		sort.Strings(goldenFiltered)
 
 		got, err := kv.ListByPrefix(prefix)
 		if err != nil {
 			t.Fatalf("unexpected error in ListByPrefix: %v", err)
 		}
 
+		if kv.Len() != len(golden) {
+			t.Errorf("expected len %d, got %d", len(golden), kv.Len())
+		}
+
+		for _, key := range goldenFiltered {
+			val, err := kv.Get(key)
+			if err != nil {
+				t.Fatalf("unexpected error in Get: %v", err)
+			}
+			if val != key {
+				t.Errorf("expected %q, got %q", key, val)
+			}
+		}
+
 		t.Logf("seed: %d, task %v, prefix: %q", seed, task, prefix)
-		compareSlice(t, goldenList, got)
+		compareSlice(t, goldenFiltered, got)
 	})
 }
 
@@ -820,9 +840,9 @@ type command struct {
 }
 
 const (
-	taskSize      = 5
+	taskSize      = 50
 	taskMinKeyLen = 1
-	taskMaxKeyLen = 3
+	taskMaxKeyLen = 5
 )
 
 func randTask(seed int64) []command {
