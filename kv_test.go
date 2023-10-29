@@ -317,6 +317,19 @@ func TestKVError(t *testing.T) {
 	}
 }
 
+func TestKVListByPrefix2Error(t *testing.T) {
+	cache := &MockErrCache{}
+	kv := NewKV[string](cache)
+
+	kv.Set("e", "wat")
+	kv.Set("er", "wat")
+	kv.Set("err", "something")
+	_, err := kv.ListByPrefix("err")
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+}
+
 // To check that the error is propagated correctly.
 type MockErrCache struct{}
 
@@ -747,7 +760,7 @@ func FuzzKVSetListByPrefix(f *testing.F) {
 func TestKVDelNoprefix(t *testing.T) {
 	kv := NewKV[string](NewMapCache[string, string]())
 	kv.Set("hu", "hu")
-	kv.Del("h")
+	_ = kv.Del("h")
 	res, err := kv.Get("hu")
 	if err != nil {
 		t.Errorf("unexpected error in Get: %v", err)
@@ -797,7 +810,8 @@ func FuzzMonkey(f *testing.F) {
 				kv.Set(cmd.key, cmd.key)
 				golden[cmd.key] = struct{}{}
 			} else if cmd.action == "Del" {
-				kv.Del(cmd.key)
+				// Since keys are random we expect a lot of Del to fail.
+				_ = kv.Del(cmd.key)
 				delete(golden, cmd.key)
 			}
 		}
