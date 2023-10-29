@@ -4,7 +4,7 @@ Instead of storing each character of the trie in the separate node, we can store
 
 "Tail" is the suffix part of the key that belongs to one key only.
 
-For example before optimiztion keys "apple" and "approve" will be stored this way (one node per character):
+For example before optimiztion keys "apple" and "approve" were stored this way (one node per character):
 
 a - p - p - l - e
         |
