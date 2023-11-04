@@ -203,7 +203,7 @@ func BenchmarkKVListByPrefix(b *testing.B) {
 	c := NewKV[string](NewMapCache[string, string]())
 	keys := make([]string, 100_000)
 	for i := 0; i < 100_000; i++ {
-		l := rand.Intn(36)
+		l := rand.Intn(15)+15
 		unique := randomString(l)
 		keys[i] = unique
 		for j := 0; j < 10; j++ {
@@ -213,6 +213,12 @@ func BenchmarkKVListByPrefix(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = c.ListByPrefix(keys[i%len(keys)])
+		res, err := c.ListByPrefix(keys[i%len(keys)])
+		if err != nil {
+			b.Errorf("unexpected error in ListByPrefix: %v", err)
+		}
+		if len(res) != 10 {
+			b.Errorf("expected len 10, but got %d", len(res))
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"bytes"
 	"sync"
 )
 
@@ -9,8 +10,8 @@ import (
 const maxKeyLength = 512
 
 type trieNode struct {
-	// character
-	c byte
+	// Node suffix. Single byte for most nodes, but can be longer for tail node.
+	b []byte
 	// depth level
 	d int
 
@@ -33,7 +34,7 @@ type trieNode struct {
 func (n *trieNode) addToList(node *trieNode) *trieNode {
 	curr := n
 	for {
-		if node.c < curr.c {
+		if node.b[0] < curr.b[0] {
 			node.prev = curr.prev
 			node.next = curr
 			curr.prev = node
@@ -68,7 +69,7 @@ func (n *trieNode) addToList(node *trieNode) *trieNode {
 func (n *trieNode) removeFromList(c byte) (*trieNode, bool) {
 	curr := n
 	for {
-		if curr.c == c {
+		if curr.b[0] == c {
 			if curr.prev != nil {
 				curr.prev.next = curr.next
 			}
@@ -125,21 +126,22 @@ func (kv *KV[V]) Set(key string, value V) {
 		return
 	}
 
+	keyb := []byte(key)
 	node := kv.trie
-	for i := 0; i < len(key); i++ {
+	for len(keyb) > 0 {
 		if node.down == nil {
 			// Creating new level.
 			node.down = make(map[byte]*trieNode)
 		}
 
-		next := node.down[key[i]]
+		next := node.down[keyb[0]]
 		if next == nil {
 			// Creating new node.
 			next = &trieNode{
-				c: key[i],
+				b: keyb,
 				d: node.d + 1,
 			}
-			node.down[key[i]] = next
+			node.down[keyb[0]] = next
 			if node.nextLevelHead == nil {
 				node.nextLevelHead = next
 			} else {
@@ -149,15 +151,101 @@ func (kv *KV[V]) Set(key string, value V) {
 					node.nextLevelHead = head
 				}
 			}
+		} else if len(next.b) == 1 {
+			// Single byte nodes are a simple case.
+		} else {
+			// Multi byte nodes require splitting.
+
+			// Removing node from the linked list.
+			head, empty := node.nextLevelHead.removeFromList(keyb[0])
+			if empty {
+				node.nextLevelHead = nil
+			} else if head != nil {
+				node.nextLevelHead = head
+			}
+
+			commonPrefixLen := commonPrefixLen(keyb, next.b)
+			for i := 0; i < commonPrefixLen; i++ {
+				// Creating new single-byte node.
+				newNode := &trieNode{
+					b:    []byte{keyb[i]},
+					d:    node.d + 1,
+					down: make(map[byte]*trieNode),
+				}
+				node.down[keyb[i]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+
+				node = newNode
+			}
+
+			if (bytes.Equal(next.b, keyb[:commonPrefixLen]) && next.terminal) || len(keyb) == commonPrefixLen {
+				// If last node is end of key, or end of the node we are splitting, mark it as terminal.
+				node.terminal = true
+			}
+
+			// Adding removed node back.
+			if len(next.b) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        next.b[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[next.b[commonPrefixLen]] = newNode
+				node.nextLevelHead = newNode
+			}
+
+			// Adding new tail node.
+			if len(keyb) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        keyb[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[keyb[commonPrefixLen]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+			}
+
+			// keyb = keyb[commonPrefixLen:]
+			// continue
+			return
 		}
 
+		keyb = keyb[commonPrefixLen(keyb, next.b):]
 		node = next
 	}
 
 	node.terminal = true
 }
 
-// DFS starts with last node of the key prefix.
+func commonPrefixLen(a, b []byte) int {
+	i := 0
+	for ; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+
+	return i
+}
+
+// Depth First Search starts with last node of the key prefix and traverses the trie,
+// appending all terminal nodes to the result.
 func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 	res := []V{}
 	key := make([]byte, len(prefix), maxKeyLength)
@@ -177,6 +265,7 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		return res, nil
 	}
 
+	// Instead of recursive DFS, we use stack-based approach.
 	stack := make([]*trieNode, 0, maxKeyLength)
 	stack = append(stack, node.nextLevelHead)
 	var (
@@ -190,18 +279,26 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 			break
 		}
 
+		// Pop the top node from the stack.
 		top = stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
 		if top.d > prevDepth {
 			// We have descended to the next level.
-			key = append(key, top.c)
+			key = append(key, top.b...)
 		} else if top.d < prevDepth {
 			// We have ascended to the previous level.
-			key = key[:len(key)-(prevDepth-top.d)]
-			key[len(key)-1] = top.c
+			key = key[:top.d]
+			key[len(key)-1] = top.b[0]
+			if len(top.b) > 1 {
+				key = append(key, top.b[1:]...)
+			}
 		} else {
-			key[len(key)-1] = top.c
+			key = key[:top.d]
+			key[len(key)-1] = top.b[0]
+			if len(top.b) > 1 {
+				key = append(key, top.b[1:]...)
+			}
 		}
 		prevDepth = top.d
 
@@ -237,6 +334,14 @@ func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
 		if next == nil {
 			return nil, nil
 		}
+		// If we reached a multibyte tail node, we can return its value,
+		// since tail nodes have no descendants.
+		if len(next.b) > 1 && len(next.b) >= len(prefix)-i {
+			if bytes.Equal(next.b[:len(prefix)-i], []byte(prefix)[i:]) {
+				v, err := kv.data.Get(prefix + string(next.b[len(prefix)-i:]))
+				return []V{v}, err
+			}
+		}
 		node = next
 	}
 
@@ -255,6 +360,7 @@ func (kv *KV[V]) Del(key string) error {
 
 	node := kv.trie
 	stack := []*trieNode{}
+	found := false
 	for i := 0; i < len(key); i++ {
 		next := node.down[key[i]]
 		if next == nil {
@@ -264,8 +370,19 @@ func (kv *KV[V]) Del(key string) error {
 
 		stack = append(stack, node)
 		node = next
+		if bytes.Equal(node.b, []byte(key)[i:]) {
+			if node.terminal {
+				found = true
+			}
+			break
+		}
 	}
 
+	if !found {
+		// If we are here, the key does not exist.
+		return kv.data.Del(key)
+	}
+	
 	node.terminal = false
 
 	// Go back the stack removing nodes with no descendants.
@@ -273,11 +390,11 @@ func (kv *KV[V]) Del(key string) error {
 		prev := stack[i]
 		stack = stack[:i]
 		if node.nextLevelHead == nil {
-			head, empty := prev.nextLevelHead.removeFromList(node.c)
+			head, empty := prev.nextLevelHead.removeFromList(node.b[0])
 			if head != nil || (head == nil && empty) {
 				prev.nextLevelHead = head
 			}
-			delete(prev.down, node.c)
+			delete(prev.down, node.b[0])
 		}
 
 		if prev.terminal || len(prev.down) > 0 && prev == kv.trie {
