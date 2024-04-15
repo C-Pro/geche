@@ -29,7 +29,7 @@ When adding the new key we should do the same loop over key characters finding c
 2. We reach the key character that does not have corresponding trie node.
 
 In first case we keep the current behaviour: just setting "terminal" flag in the last node of the key.
-In the second case instead of adding the "tail" of the key as new nodes one character at a time we add the "tail" as a single node containing the whole tail string insteead of a single character, and setting this node's terminal flag to true.
+In the second case instead of adding the "tail" of the key as new nodes one character at a time we add the "tail" as a single node containing the whole tail string instead of a single character, and setting this node's terminal flag to true.
 
 Oopps. Now we have a third case: while looking for the next character of the key we can reach the node that already has the tail string.
 In this case the easiest option is to delete tail node (but remember the tail string first) and start moving on both strings (key and tail) and adding new nodes until we reach end of one or both strings.
@@ -51,3 +51,49 @@ If it does not have descendants, we need to delete the node and all its ancestor
 Listing by prefix should not change much. If we encounter tail node after we exhausted prefix string - we emit this key's value as a part of the result stet, and move along.
 
 If we encounter tail node before we exhausted prefix string - we need to compare prefix string with the tail string. If remaining part of the prefix is the tail's prefix, we add this key's value to the result set and move along. If it is not, just continue our loop as usual.
+
+
+# Infix aggregation
+
+Another optimisation is to aggregate common infixes that do not have any branching. This is quite a common case to use a composite key like "user:object_id" so we can list all objects for the user.
+Consider an example set of keys:
+
+1. bob:1
+2. bob:2
+3. barbara:1
+4. karl:1
+
+We can apply tail aggregation to keys 3 and 4:
+
+```
+root - b - o - b - : - 1
+  |    |           |
+  |    |           2
+  |    |
+  |    arbara:1
+  |
+  karl:1
+```
+
+But there's another optimisation we can do: we can aggregate infix part that is common for two bobs:
+
+```
+root - b - ob: - 1
+  |    |     |
+  |    |     2
+  |    |
+  |    arbara:1
+  |
+  karl:1
+```
+
+In this simple example this does not look like much, but it can be significant when there are a lot of keys with common prefix parts. Expecially if common parts are quite long (e.g. uuids).
+
+## Implementation
+
+### Adding the new key
+
+When we encounter a multibyte node, it now can be not only a tail node,
+but also a common infix node. We need to check if the new key yet unmatched part has a common prefix with current multibyte node. If it does, we need to split themultibyte node into two parts: common prefix and the rest of the string. The common prefix part will be a new node A, and the rest of the string will be a tail node B.
+Node b will be a direct child of node A.
+And then we will continue adding remaining part of the key to the trie as usual (either as a tail node or as a single-character node descendant to the node A).
