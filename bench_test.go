@@ -45,6 +45,16 @@ func benchmarkSet(c Geche[string, string], testData []testCase, b *testing.B) {
 	}
 }
 
+func benchmarkSetIfPresent(c Geche[string, string], testData []testCase, b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		if rand.Intn(2) == 0 {
+			c.Set(testData[i%len(testData)].key, "value")
+		} else {
+			c.SetIfPresent(testData[i%len(testData)].key, "value")
+		}
+	}
+}
+
 func benchmarkFuzz(
 	c Geche[string, string],
 	testData []testCase,
@@ -108,6 +118,60 @@ func BenchmarkSet(b *testing.B) {
 		c := newAnyCache()
 		for i := 0; i < b.N; i++ {
 			c.Set(data[i%len(data)].key, "value")
+		}
+	})
+}
+
+func BenchmarkSetIfPresent(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"StringCache",
+			newStringCache(),
+		},
+		{
+			"UnsafeCache",
+			newUnsafeCache(),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV[string](NewMapCache[string, string]()),
+		},
+	}
+
+	data := genTestData(10_000_000)
+
+	for _, c := range tab {
+		b.Run(c.name, func(b *testing.B) {
+			benchmarkSetIfPresent(c.imp, data, b)
+		})
+	}
+
+	b.Run("AnyCache", func(b *testing.B) {
+		c := newAnyCache()
+		for i := 0; i < b.N; i++ {
+			if rand.Intn(2) == 0 {
+				c.Set(data[i%len(data)].key, "value")
+			} else {
+				c.SetIfPresent(data[i%len(data)].key, "value")
+			}
 		}
 	})
 }
@@ -203,7 +267,7 @@ func BenchmarkKVListByPrefix(b *testing.B) {
 	c := NewKV[string](NewMapCache[string, string]())
 	keys := make([]string, 100_000)
 	for i := 0; i < 100_000; i++ {
-		l := rand.Intn(15)+15
+		l := rand.Intn(15) + 15
 		unique := randomString(l)
 		keys[i] = unique
 		for j := 0; j < 10; j++ {

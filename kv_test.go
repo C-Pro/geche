@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func ExampleNewKV() {
@@ -333,10 +334,11 @@ func TestKVListByPrefix2Error(t *testing.T) {
 // To check that the error is propagated correctly.
 type MockErrCache struct{}
 
-func (m *MockErrCache) Set(key string, value string) {}
-func (m *MockErrCache) Del(key string) error         { return nil }
-func (m *MockErrCache) Snapshot() map[string]string  { return nil }
-func (m *MockErrCache) Len() int                     { return 0 }
+func (m *MockErrCache) Set(key string, value string)               {}
+func (m *MockErrCache) SetIfPresent(key string, value string) bool { return false }
+func (m *MockErrCache) Del(key string) error                       { return nil }
+func (m *MockErrCache) Snapshot() map[string]string                { return nil }
+func (m *MockErrCache) Len() int                                   { return 0 }
 func (m *MockErrCache) Get(key string) (string, error) {
 	if key == "err" {
 		return "", errors.New("wow an error")
@@ -358,7 +360,13 @@ func TestKVAlloc(t *testing.T) {
 	for i := 0; i < 10000; i++ {
 		key := genRandomString(rand.Intn(300) + 1)
 		rawDataLen += int64(len(key) * 2)
+
 		kv.Set(key, key)
+	}
+
+	for i := 0; i < 10000; i++ {
+		key := genRandomString(rand.Intn(300) + 1)
+		kv.SetIfPresent(key, key)
 	}
 
 	runtime.GC()
@@ -705,6 +713,84 @@ func TestSet5(t *testing.T) {
 
 	t.Log(values)
 	compareSlice(t, expected, values)
+}
+
+func TestSetIfPresent(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("a", "test2")
+	kv.Set("b", "test1")
+	kv.Set("c", "test4")
+
+	if !kv.SetIfPresent("a", "test5") {
+		t.Errorf("key \"abracadabra\" is present in kv, SetIfPresent should return true")
+	}
+
+	if !kv.SetIfPresent("a", "test6") {
+		t.Errorf("key \"abracadabra\" is present in kv, SetIfPresent should return true")
+	}
+
+	if kv.SetIfPresent("d", "test3") {
+		t.Errorf("key \"bbb\" is not present in kv, SetIfPresent should return false")
+	}
+
+	if kv.SetIfPresent("d", "test3") {
+		t.Errorf("key \"bbb\" is not present in kv, SetIfPresent should return false")
+	}
+
+	val, err := kv.Get("a")
+	if err != nil {
+		t.Fatalf("unexpected error in Get: %v", err)
+	}
+
+	if val != "test6" {
+		t.Errorf("expected %q, got %q", "test6", val)
+	}
+
+	_, err = kv.Get("d")
+	if err == nil {
+		t.Errorf("expected key \"d\" to not be present in the kv")
+	}
+}
+
+func TestSetIfPresentConcurrent(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("a", "startA")
+	kv.Set("b", "startB")
+
+	for i := 0; i < 1000; i++ {
+		go func() {
+			switch rand.Intn(6) {
+			case 0:
+				kv.SetIfPresent("a", "a")
+			case 1:
+				kv.SetIfPresent("b", "b")
+			case 2:
+				kv.SetIfPresent("c", "c")
+			case 3:
+				_, _ = kv.Get("a")
+				time.Sleep(5 * time.Millisecond)
+			case 4:
+				_, _ = kv.Get("b")
+				time.Sleep(5 * time.Millisecond)
+			case 5:
+				_, _ = kv.Get("c")
+				time.Sleep(5 * time.Millisecond)
+			}
+		}()
+
+	}
+
+	if val, _ := kv.Get("a"); val != "a" {
+		t.Errorf("expected %q, got %q", "a", val)
+	}
+
+	if val, _ := kv.Get("b"); val != "b" {
+		t.Errorf("expected %q, got %q", "b", val)
+	}
+
+	if _, err := kv.Get("c"); err == nil {
+		t.Errorf("expected key \"c\" to not be present in the kv")
+	}
 }
 
 func FuzzKVSetListByPrefix(f *testing.F) {

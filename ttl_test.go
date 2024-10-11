@@ -173,3 +173,29 @@ func TestTTLScenario(t *testing.T) {
 		t.Errorf("expected cache data len to be 5 but got %d", len(c.data))
 	}
 }
+
+func TestSetIfPresentResetsTTL(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Second)
+
+	ts := time.Now()
+
+	c.Set("key", "value")
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(time.Second) }
+	c.mux.Unlock()
+
+	if !c.SetIfPresent("key", "value2") {
+		t.Errorf("expected key to be set as it is present in the map, but SetIfPresent returned false")
+	}
+
+	v, err := c.Get("key")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+
+	if v != "value2" {
+		t.Errorf("value was not updated by SetIfPresent, expected %v, but got %v", "value2", v)
+	}
+}

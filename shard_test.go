@@ -17,7 +17,6 @@ func ExampleNewSharded() {
 		&NumberMapper[int]{},
 	)
 
-
 	// Set 4000 records in 4 parallel goroutines.
 	wg := sync.WaitGroup{}
 	wg.Add(numShards)
@@ -64,6 +63,28 @@ func TestSharded(t *testing.T) {
 
 		if v != strconv.Itoa(i) {
 			t.Fatalf("key %d with unexpected value %q", i, v)
+		}
+	}
+
+	for i := 0; i < 2000; i++ {
+		c.SetIfPresent(i, "modified")
+	}
+
+	for i := 0; i < 1000; i++ {
+		v, err := c.Get(i)
+		if err != nil {
+			t.Fatalf("unexpected error in Get: %v", err)
+		}
+
+		if v != "modified" {
+			t.Fatalf("key %d with unexpected value %q", i, v)
+		}
+	}
+
+	for i := 1000; i < 2000; i++ {
+		_, err := c.Get(i)
+		if err == nil {
+			t.Fatalf("expected error in Get")
 		}
 	}
 

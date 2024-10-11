@@ -27,6 +27,19 @@ func (s *stringCache) Set(key, value string) {
 	s.data[key] = value
 }
 
+func (s *stringCache) SetIfPresent(key, value string) bool {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	_, ok := s.data[key]
+	if !ok {
+		return false
+	}
+
+	s.data[key] = value
+	return true
+}
+
 func (s *stringCache) Get(key string) (string, error) {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
@@ -71,6 +84,15 @@ func (u *unsafeCache) Set(key, value string) {
 	u.data[key] = value
 }
 
+func (u *unsafeCache) SetIfPresent(key, value string) bool {
+	if _, err := u.Get(key); err != nil {
+		return false
+	}
+
+	u.Set(key, value)
+	return true
+}
+
 func (u *unsafeCache) Get(key string) (string, error) {
 	v, ok := u.data[key]
 	if !ok {
@@ -108,6 +130,18 @@ func (a *anyCache) Set(key string, value any) {
 	defer a.mux.Unlock()
 
 	a.data[key] = value
+}
+
+func (a *anyCache) SetIfPresent(key string, value any) bool {
+	a.mux.Lock()
+	defer a.mux.Unlock()
+
+	_, ok := a.data[key]
+	if ok {
+		a.data[key] = value
+	}
+
+	return ok
 }
 
 func (a *anyCache) Get(key string) (any, error) {
