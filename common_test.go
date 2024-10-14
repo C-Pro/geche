@@ -37,7 +37,7 @@ func testSetThenSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
 
 func testSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
 	if imp.SetIfPresent("key", "value") {
-		t.Errorf("expected SetIfPresent to not a new value for non-existing key")
+		t.Errorf("expected SetIfPresent to not insert a new value for non-existing key")
 	}
 
 	val, err := imp.Get("key")

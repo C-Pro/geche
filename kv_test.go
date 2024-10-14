@@ -768,17 +768,15 @@ func TestSetIfPresentConcurrent(t *testing.T) {
 				kv.SetIfPresent("c", "c")
 			case 3:
 				_, _ = kv.Get("a")
-				time.Sleep(5 * time.Millisecond)
 			case 4:
 				_, _ = kv.Get("b")
-				time.Sleep(5 * time.Millisecond)
 			case 5:
 				_, _ = kv.Get("c")
-				time.Sleep(5 * time.Millisecond)
 			}
 		}()
-
 	}
+
+	time.Sleep(10 * time.Millisecond)
 
 	if val, _ := kv.Get("a"); val != "a" {
 		t.Errorf("expected %q, got %q", "a", val)

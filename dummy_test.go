@@ -132,18 +132,6 @@ func (a *anyCache) Set(key string, value any) {
 	a.data[key] = value
 }
 
-func (a *anyCache) SetIfPresent(key string, value any) bool {
-	a.mux.Lock()
-	defer a.mux.Unlock()
-
-	_, ok := a.data[key]
-	if ok {
-		a.data[key] = value
-	}
-
-	return ok
-}
-
 func (a *anyCache) Get(key string) (any, error) {
 	a.mux.RLock()
 	defer a.mux.RUnlock()
