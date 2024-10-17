@@ -82,7 +82,7 @@ func (tx *Tx[K, V]) Set(key K, value V) {
 	tx.cache.Set(key, value)
 }
 
-func (tx *Tx[K, V]) SetIfPresent(key K, value V) bool {
+func (tx *Tx[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	if atomic.LoadInt32(&tx.unlocked) == 1 {
 		panic("cannot use unlocked transaction")
 	}

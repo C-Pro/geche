@@ -27,17 +27,17 @@ func (s *stringCache) Set(key, value string) {
 	s.data[key] = value
 }
 
-func (s *stringCache) SetIfPresent(key, value string) bool {
+func (s *stringCache) SetIfPresent(key, value string) (string, bool) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	_, ok := s.data[key]
+	old, ok := s.data[key]
 	if !ok {
-		return false
+		return "", false
 	}
 
 	s.data[key] = value
-	return true
+	return old, true
 }
 
 func (s *stringCache) Get(key string) (string, error) {
@@ -84,13 +84,14 @@ func (u *unsafeCache) Set(key, value string) {
 	u.data[key] = value
 }
 
-func (u *unsafeCache) SetIfPresent(key, value string) bool {
-	if _, err := u.Get(key); err != nil {
-		return false
+func (u *unsafeCache) SetIfPresent(key, value string) (string, bool) {
+	old, err := u.Get(key)
+	if err != nil {
+		return "", false
 	}
 
 	u.Set(key, value)
-	return true
+	return old, true
 }
 
 func (u *unsafeCache) Get(key string) (string, error) {

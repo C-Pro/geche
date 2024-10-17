@@ -186,8 +186,13 @@ func TestSetIfPresentResetsTTL(t *testing.T) {
 	c.now = func() time.Time { return ts.Add(time.Second) }
 	c.mux.Unlock()
 
-	if !c.SetIfPresent("key", "value2") {
+	old, inserted := c.SetIfPresent("key", "value2")
+	if !inserted {
 		t.Errorf("expected key to be set as it is present in the map, but SetIfPresent returned false")
+	}
+
+	if old != "value" {
+		t.Errorf("expected old value %q, but got %q", "value", old)
 	}
 
 	v, err := c.Get("key")

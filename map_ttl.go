@@ -77,16 +77,17 @@ func (c *MapTTLCache[K, V]) Set(key K, value V) {
 }
 
 // SetIfPresent sets the given key to the given value if the key was already present, and resets the TTL
-func (c *MapTTLCache[K, V]) SetIfPresent(key K, value V) bool {
+func (c *MapTTLCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	if _, err := c.get(key); err == nil {
+	old, err := c.get(key)
+	if err == nil {
 		c.set(key, value)
-		return true
+		return old, true
 	}
 
-	return false
+	return old, false
 }
 
 // Get returns ErrNotFound if key is not found in the cache or record is outdated.

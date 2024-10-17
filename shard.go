@@ -75,7 +75,7 @@ func (s *Sharded[K, V]) Set(key K, value V) {
 	s.shards[s.mapper.Map(key, s.N)].Set(key, value)
 }
 
-func (s *Sharded[K, V]) SetIfPresent(key K, value V) bool {
+func (s *Sharded[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return s.shards[s.mapper.Map(key, s.N)].SetIfPresent(key, value)
 }
 

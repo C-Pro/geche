@@ -113,16 +113,17 @@ func NewKV[V any](
 	return &kv
 }
 
-func (kv *KV[V]) SetIfPresent(key string, value V) bool {
+func (kv *KV[V]) SetIfPresent(key string, value V) (V, bool) {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
 
-	if _, err := kv.data.Get(key); err == nil {
+	previousVal, err := kv.data.Get(key)
+	if err == nil {
 		kv.set(key, value)
-		return true
+		return previousVal, true
 	}
 
-	return false
+	return previousVal, false
 }
 
 // Set key-value pair while updating the trie.

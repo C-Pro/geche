@@ -41,16 +41,18 @@ func (c *RingBuffer[K, V]) Set(key K, value V) {
 	c.set(key, value)
 }
 
-func (c *RingBuffer[K, V]) SetIfPresent(key K, value V) bool {
+func (c *RingBuffer[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	if _, present := c.index[key]; present {
+	i, present := c.index[key]
+	if present {
+		oldVal := c.data[i].value
 		c.set(key, value)
-		return true
+		return oldVal, present
 	}
 
-	return false
+	return c.zeroV, false
 }
 
 // Get returns cached value for the key, or ErrNotFound if the key does not exist.

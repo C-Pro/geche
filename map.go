@@ -25,16 +25,17 @@ func (c *MapCache[K, V]) Set(key K, value V) {
 	c.data[key] = value
 }
 
-func (c *MapCache[K, V]) SetIfPresent(key K, value V) bool {
+func (c *MapCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	if _, ok := c.data[key]; ok {
+	old, ok := c.data[key]
+	if ok {
 		c.data[key] = value
-		return true
+		return old, true
 	}
 
-	return false
+	return old, false
 }
 
 // Get returns ErrNotFound if key does not exist in the cache.

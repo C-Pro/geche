@@ -21,8 +21,13 @@ func testSetGet(t *testing.T, imp Geche[string, string]) {
 
 func testSetThenSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
 	imp.Set("key", "value")
-	if !imp.SetIfPresent("key", "value2") {
+	old, inserted := imp.SetIfPresent("key", "value2")
+	if !inserted {
 		t.Errorf("expected SetIfPresent to insert a new value for existing key")
+	}
+
+	if old != "value" {
+		t.Errorf("expected old value %q to be returned from SetIfPresent, got %q", "value", old)
 	}
 
 	val, err := imp.Get("key")
@@ -36,7 +41,7 @@ func testSetThenSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
 }
 
 func testSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
-	if imp.SetIfPresent("key", "value") {
+	if _, inserted := imp.SetIfPresent("key", "value"); inserted {
 		t.Errorf("expected SetIfPresent to not insert a new value for non-existing key")
 	}
 

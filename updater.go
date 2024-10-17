@@ -59,7 +59,7 @@ func (u *Updater[K, V]) Set(key K, value V) {
 	u.cache.Set(key, value)
 }
 
-func (u *Updater[K, V]) SetIfPresent(key K, value V) bool {
+func (u *Updater[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return u.cache.SetIfPresent(key, value)
 }
 

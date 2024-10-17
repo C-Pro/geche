@@ -39,7 +39,12 @@ func main() {
     }
 	
 	// will update the value associated to key 1
-	c.SetIfPresent(1, "two")
+	previousVal, updated := c.SetIfPresent(1, "two")
+	// will print "one"
+	fmt.Println(previousVal)
+	// will print "true"
+	fmt.Println(updated)
+	
 	// will not have any effect
 	c.SetIfPresent(2, "dua")
 

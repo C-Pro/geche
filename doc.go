@@ -9,8 +9,8 @@ var ErrNotFound = errors.New("not found")
 // Geche interface is a common interface for all cache implementations.
 type Geche[K comparable, V any] interface {
 	Set(K, V)
-	// SetIfPresent sets the kv only if the key was already present, and returns whether the insertion was performed
-	SetIfPresent(K, V) bool
+	// SetIfPresent sets the kv only if the key was already present, and returns the previous value (if any) and whether the insertion was performed
+	SetIfPresent(K, V) (V, bool)
 	Get(K) (V, error)
 	Del(K) error
 	Snapshot() map[K]V

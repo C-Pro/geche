@@ -334,11 +334,11 @@ func TestKVListByPrefix2Error(t *testing.T) {
 // To check that the error is propagated correctly.
 type MockErrCache struct{}
 
-func (m *MockErrCache) Set(key string, value string)               {}
-func (m *MockErrCache) SetIfPresent(key string, value string) bool { return false }
-func (m *MockErrCache) Del(key string) error                       { return nil }
-func (m *MockErrCache) Snapshot() map[string]string                { return nil }
-func (m *MockErrCache) Len() int                                   { return 0 }
+func (m *MockErrCache) Set(key string, value string)                         {}
+func (m *MockErrCache) SetIfPresent(key string, value string) (string, bool) { return "", false }
+func (m *MockErrCache) Del(key string) error                                 { return nil }
+func (m *MockErrCache) Snapshot() map[string]string                          { return nil }
+func (m *MockErrCache) Len() int                                             { return 0 }
 func (m *MockErrCache) Get(key string) (string, error) {
 	if key == "err" {
 		return "", errors.New("wow an error")
@@ -721,20 +721,30 @@ func TestSetIfPresent(t *testing.T) {
 	kv.Set("b", "test1")
 	kv.Set("c", "test4")
 
-	if !kv.SetIfPresent("a", "test5") {
+	old, inserted := kv.SetIfPresent("a", "test5")
+	if !inserted {
+		t.Errorf("key \"a\" is present in kv, SetIfPresent should return true")
+	}
+
+	if old != "test2" {
+		t.Errorf("old value is %q, SetIfPresent should return true", old)
+	}
+
+	old, inserted = kv.SetIfPresent("a", "test6")
+	if !inserted {
 		t.Errorf("key \"abracadabra\" is present in kv, SetIfPresent should return true")
 	}
 
-	if !kv.SetIfPresent("a", "test6") {
-		t.Errorf("key \"abracadabra\" is present in kv, SetIfPresent should return true")
+	if old != "test5" {
+		t.Errorf("old value associated with \"a\" is not \"test2\"")
 	}
 
-	if kv.SetIfPresent("d", "test3") {
+	if _, inserted := kv.SetIfPresent("d", "test3"); inserted {
 		t.Errorf("key \"bbb\" is not present in kv, SetIfPresent should return false")
 	}
 
-	if kv.SetIfPresent("d", "test3") {
-		t.Errorf("key \"bbb\" is not present in kv, SetIfPresent should return false")
+	if _, inserted := kv.SetIfPresent("d", "test3"); inserted {
+		t.Errorf("key \"d\" is still not present in kv, SetIfPresent should return false")
 	}
 
 	val, err := kv.Get("a")
