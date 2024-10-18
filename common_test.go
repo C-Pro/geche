@@ -19,6 +19,38 @@ func testSetGet(t *testing.T, imp Geche[string, string]) {
 	}
 }
 
+func testSetThenSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
+	imp.Set("key", "value")
+	old, inserted := imp.SetIfPresent("key", "value2")
+	if !inserted {
+		t.Errorf("expected SetIfPresent to insert a new value for existing key")
+	}
+
+	if old != "value" {
+		t.Errorf("expected old value %q to be returned from SetIfPresent, got %q", "value", old)
+	}
+
+	val, err := imp.Get("key")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+
+	if val != "value2" {
+		t.Errorf("expected value %q, got %q", "value2", val)
+	}
+}
+
+func testSetIfPresentThenGet(t *testing.T, imp Geche[string, string]) {
+	if _, inserted := imp.SetIfPresent("key", "value"); inserted {
+		t.Errorf("expected SetIfPresent to not insert a new value for non-existing key")
+	}
+
+	val, err := imp.Get("key")
+	if err == nil {
+		t.Errorf("expected error not found in Get: %v", val)
+	}
+}
+
 func testGetNonExist(t *testing.T, imp Geche[string, string]) {
 	_, err := imp.Get("key")
 	if err != ErrNotFound {
@@ -200,6 +232,8 @@ func TestCommon(t *testing.T) {
 		{"Del", testDel},
 		{"DelOdd", testDelOdd},
 		{"SnapshotLen", testSnapshotLen},
+		{"SetSetIfPresentGet", testSetThenSetIfPresentThenGet},
+		{"SetIfPresentGet", testSetIfPresentThenGet},
 	}
 	for _, ci := range caches {
 		for _, tc := range tab {

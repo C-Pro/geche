@@ -45,6 +45,12 @@ func benchmarkSet(c Geche[string, string], testData []testCase, b *testing.B) {
 	}
 }
 
+func benchmarkSetIfPresent(c Geche[string, string], testKeys []string, b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		c.SetIfPresent(testKeys[i%len(testKeys)], "value")
+	}
+}
+
 func benchmarkFuzz(
 	c Geche[string, string],
 	testData []testCase,
@@ -110,6 +116,99 @@ func BenchmarkSet(b *testing.B) {
 			c.Set(data[i%len(data)].key, "value")
 		}
 	})
+}
+
+func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"StringCache",
+			newStringCache(),
+		},
+		{
+			"UnsafeCache",
+			newUnsafeCache(),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV[string](NewMapCache[string, string]()),
+		},
+	}
+
+	testKeys := make([]string, 10_000_000)
+	for i := 0; i < len(testKeys); i++ {
+		testKeys[i] = strconv.Itoa(i)
+	}
+
+	b.ResetTimer()
+
+	for _, c := range tab {
+		b.Run(c.name, func(b *testing.B) {
+			benchmarkSetIfPresent(c.imp, testKeys, b)
+		})
+	}
+}
+
+func BenchmarkSetIfPresentOnlyMisses(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"StringCache",
+			newStringCache(),
+		},
+		{
+			"UnsafeCache",
+			newUnsafeCache(),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV[string](NewMapCache[string, string]()),
+		},
+	}
+
+	b.ResetTimer()
+
+	for _, c := range tab {
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				c.imp.SetIfPresent("absent", "never set")
+			}
+		})
+	}
 }
 
 // BenchmarkEverything performs different operations randomly.
@@ -203,7 +302,7 @@ func BenchmarkKVListByPrefix(b *testing.B) {
 	c := NewKV[string](NewMapCache[string, string]())
 	keys := make([]string, 100_000)
 	for i := 0; i < 100_000; i++ {
-		l := rand.Intn(15)+15
+		l := rand.Intn(15) + 15
 		unique := randomString(l)
 		keys[i] = unique
 		for j := 0; j < 10; j++ {

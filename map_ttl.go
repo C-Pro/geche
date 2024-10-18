@@ -73,38 +73,21 @@ func NewMapTTLCache[K comparable, V any](
 func (c *MapTTLCache[K, V]) Set(key K, value V) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
+	c.set(key, value)
+}
 
-	val := ttlRec[K, V]{
-		value:     value,
-		prev:      c.tail,
-		timestamp: c.now(),
+// SetIfPresent sets the given key to the given value if the key was already present, and resets the TTL
+func (c *MapTTLCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	old, err := c.get(key)
+	if err == nil {
+		c.set(key, value)
+		return old, true
 	}
 
-	if c.head == c.zero {
-		c.head = key
-		c.tail = key
-		val.prev = c.zero
-		c.data[key] = val
-		return
-	}
-
-	// If the record for this key already exists
-	// and is somewhere in the middle of the list
-	// removing it before adding to the tail.
-	if rec, ok := c.data[key]; ok && key != c.tail {
-		prev := c.data[rec.prev]
-		next := c.data[rec.next]
-		prev.next = rec.next
-		next.prev = rec.prev
-		c.data[rec.prev] = prev
-		c.data[rec.next] = next
-	}
-
-	tailval := c.data[c.tail]
-	tailval.next = key
-	c.data[c.tail] = tailval
-	c.tail = key
-	c.data[key] = val
+	return old, false
 }
 
 // Get returns ErrNotFound if key is not found in the cache or record is outdated.
@@ -112,16 +95,7 @@ func (c *MapTTLCache[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
-	v, ok := c.data[key]
-	if !ok {
-		return v.value, ErrNotFound
-	}
-
-	if c.now().Sub(v.timestamp) >= c.ttl {
-		return v.value, ErrNotFound
-	}
-
-	return v.value, nil
+	return c.get(key)
 }
 
 func (c *MapTTLCache[K, V]) Del(key K) error {
@@ -207,11 +181,57 @@ func (c *MapTTLCache[K, V]) Snapshot() map[K]V {
 	return snapshot
 }
 
-
 // Len returns the number of records in the cache.
 func (c *MapTTLCache[K, V]) Len() int {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
 	return len(c.data)
+}
+
+func (c *MapTTLCache[K, V]) set(key K, value V) {
+	val := ttlRec[K, V]{
+		value:     value,
+		prev:      c.tail,
+		timestamp: c.now(),
+	}
+
+	if c.head == c.zero {
+		c.head = key
+		c.tail = key
+		val.prev = c.zero
+		c.data[key] = val
+		return
+	}
+
+	// If the record for this key already exists
+	// and is somewhere in the middle of the list
+	// removing it before adding to the tail.
+	if rec, ok := c.data[key]; ok && key != c.tail {
+		prev := c.data[rec.prev]
+		next := c.data[rec.next]
+		prev.next = rec.next
+		next.prev = rec.prev
+		c.data[rec.prev] = prev
+		c.data[rec.next] = next
+	}
+
+	tailval := c.data[c.tail]
+	tailval.next = key
+	c.data[c.tail] = tailval
+	c.tail = key
+	c.data[key] = val
+}
+
+func (c *MapTTLCache[K, V]) get(key K) (V, error) {
+	v, ok := c.data[key]
+	if !ok {
+		return v.value, ErrNotFound
+	}
+
+	if c.now().Sub(v.timestamp) >= c.ttl {
+		return v.value, ErrNotFound
+	}
+
+	return v.value, nil
 }

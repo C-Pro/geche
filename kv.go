@@ -113,124 +113,26 @@ func NewKV[V any](
 	return &kv
 }
 
+func (kv *KV[V]) SetIfPresent(key string, value V) (V, bool) {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	previousVal, err := kv.data.Get(key)
+	if err == nil {
+		kv.set(key, value)
+		return previousVal, true
+	}
+
+	return previousVal, false
+}
+
 // Set key-value pair while updating the trie.
 // Panics if key is empty.
 func (kv *KV[V]) Set(key string, value V) {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
 
-	kv.data.Set(key, value)
-
-	if key == "" {
-		kv.trie.terminal = true
-		return
-	}
-
-	keyb := []byte(key)
-	node := kv.trie
-	for len(keyb) > 0 {
-		if node.down == nil {
-			// Creating new level.
-			node.down = make(map[byte]*trieNode)
-		}
-
-		next := node.down[keyb[0]]
-		if next == nil {
-			// Creating new node.
-			next = &trieNode{
-				b: keyb,
-				d: node.d + 1,
-			}
-			node.down[keyb[0]] = next
-			if node.nextLevelHead == nil {
-				node.nextLevelHead = next
-			} else {
-				// Adding node to the linked list.
-				head := node.nextLevelHead.addToList(next)
-				if head != nil {
-					node.nextLevelHead = head
-				}
-			}
-		} else if len(next.b) == 1 {
-			// Single byte nodes are a simple case.
-		} else {
-			// Multi byte nodes require splitting.
-
-			// Removing node from the linked list.
-			head, empty := node.nextLevelHead.removeFromList(keyb[0])
-			if empty {
-				node.nextLevelHead = nil
-			} else if head != nil {
-				node.nextLevelHead = head
-			}
-
-			commonPrefixLen := commonPrefixLen(keyb, next.b)
-			for i := 0; i < commonPrefixLen; i++ {
-				// Creating new single-byte node.
-				newNode := &trieNode{
-					b:    []byte{keyb[i]},
-					d:    node.d + 1,
-					down: make(map[byte]*trieNode),
-				}
-				node.down[keyb[i]] = newNode
-				if node.nextLevelHead == nil {
-					node.nextLevelHead = newNode
-				} else {
-					head := node.nextLevelHead.addToList(newNode)
-					if head != nil {
-						node.nextLevelHead = head
-					}
-				}
-
-				node = newNode
-			}
-
-			if (bytes.Equal(next.b, keyb[:commonPrefixLen]) && next.terminal) || len(keyb) == commonPrefixLen {
-				// If last node is end of key, or end of the node we are splitting, mark it as terminal.
-				node.terminal = true
-			}
-
-			// Adding removed node back.
-			if len(next.b) > commonPrefixLen {
-				// Creating new suffix (potentially multi-byte) node.
-				newNode := &trieNode{
-					b:        next.b[commonPrefixLen:],
-					d:        node.d + 1,
-					terminal: true,
-				}
-				node.down[next.b[commonPrefixLen]] = newNode
-				node.nextLevelHead = newNode
-			}
-
-			// Adding new tail node.
-			if len(keyb) > commonPrefixLen {
-				// Creating new suffix (potentially multi-byte) node.
-				newNode := &trieNode{
-					b:        keyb[commonPrefixLen:],
-					d:        node.d + 1,
-					terminal: true,
-				}
-				node.down[keyb[commonPrefixLen]] = newNode
-				if node.nextLevelHead == nil {
-					node.nextLevelHead = newNode
-				} else {
-					head := node.nextLevelHead.addToList(newNode)
-					if head != nil {
-						node.nextLevelHead = head
-					}
-				}
-			}
-
-			// keyb = keyb[commonPrefixLen:]
-			// continue
-			return
-		}
-
-		keyb = keyb[commonPrefixLen(keyb, next.b):]
-		node = next
-	}
-
-	node.terminal = true
+	kv.set(key, value)
 }
 
 func commonPrefixLen(a, b []byte) int {
@@ -382,7 +284,7 @@ func (kv *KV[V]) Del(key string) error {
 		// If we are here, the key does not exist.
 		return kv.data.Del(key)
 	}
-	
+
 	node.terminal = false
 
 	// Go back the stack removing nodes with no descendants.
@@ -417,4 +319,119 @@ func (kv *KV[V]) Snapshot() map[string]V {
 // Len returns total number of elements in the underlying caches.
 func (kv *KV[V]) Len() int {
 	return kv.data.Len()
+}
+
+func (kv *KV[V]) set(key string, value V) {
+	kv.data.Set(key, value)
+
+	if key == "" {
+		kv.trie.terminal = true
+		return
+	}
+
+	keyb := []byte(key)
+	node := kv.trie
+	for len(keyb) > 0 {
+		if node.down == nil {
+			// Creating new level.
+			node.down = make(map[byte]*trieNode)
+		}
+
+		next := node.down[keyb[0]]
+		if next == nil {
+			// Creating new node.
+			next = &trieNode{
+				b: keyb,
+				d: node.d + 1,
+			}
+			node.down[keyb[0]] = next
+			if node.nextLevelHead == nil {
+				node.nextLevelHead = next
+			} else {
+				// Adding node to the linked list.
+				head := node.nextLevelHead.addToList(next)
+				if head != nil {
+					node.nextLevelHead = head
+				}
+			}
+		} else if len(next.b) == 1 {
+			// Single byte nodes are a simple case.
+		} else {
+			// Multi byte nodes require splitting.
+
+			// Removing node from the linked list.
+			head, empty := node.nextLevelHead.removeFromList(keyb[0])
+			if empty {
+				node.nextLevelHead = nil
+			} else if head != nil {
+				node.nextLevelHead = head
+			}
+
+			commonPrefixLen := commonPrefixLen(keyb, next.b)
+			for i := 0; i < commonPrefixLen; i++ {
+				// Creating new single-byte node.
+				newNode := &trieNode{
+					b:    []byte{keyb[i]},
+					d:    node.d + 1,
+					down: make(map[byte]*trieNode),
+				}
+				node.down[keyb[i]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+
+				node = newNode
+			}
+
+			if (bytes.Equal(next.b, keyb[:commonPrefixLen]) && next.terminal) || len(keyb) == commonPrefixLen {
+				// If last node is end of key, or end of the node we are splitting, mark it as terminal.
+				node.terminal = true
+			}
+
+			// Adding removed node back.
+			if len(next.b) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        next.b[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[next.b[commonPrefixLen]] = newNode
+				node.nextLevelHead = newNode
+			}
+
+			// Adding new tail node.
+			if len(keyb) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        keyb[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[keyb[commonPrefixLen]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+			}
+
+			// keyb = keyb[commonPrefixLen:]
+			// continue
+			return
+		}
+
+		keyb = keyb[commonPrefixLen(keyb, next.b):]
+		node = next
+	}
+
+	node.terminal = true
 }

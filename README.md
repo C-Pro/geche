@@ -14,7 +14,7 @@ Implementations are as simple as possible to be predictable in max latency, memo
 
 ## Examples
 
-Interface is quite simple with five methods: `Set`, `Get`, `Del`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
+Interface is quite simple with six methods: `Set`, `Get`, `Del`, `SetIfPresent`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
 
 ```go
 package main
@@ -37,7 +37,18 @@ func main() {
         fmt.Println(err)
         return
     }
+	
+	// will update the value associated to key 1
+	previousVal, updated := c.SetIfPresent(1, "two")
+	// will print "one"
+	fmt.Println(previousVal)
+	// will print "true"
+	fmt.Println(updated)
+	
+	// will not have any effect
+	c.SetIfPresent(2, "dua")
 
+	// will print 2
     fmt.Println(v)
 }
 ```
