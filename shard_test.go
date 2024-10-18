@@ -66,8 +66,22 @@ func TestSharded(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 2000; i++ {
-		c.SetIfPresent(i, "modified")
+	for i := 0; i < 1000; i++ {
+		old, inserted := c.SetIfPresent(i, "modified")
+		if !inserted {
+			t.Fatalf("SetIfPresent returned inserted=false for existing key %d", i)
+		}
+
+		if old != strconv.Itoa(i) {
+			t.Fatalf("SetIfPresent returned unexpected old value, expected=%d, got=%s", i, old)
+		}
+	}
+
+	for i := 1000; i < 2000; i++ {
+		_, inserted := c.SetIfPresent(i, "modified")
+		if inserted {
+			t.Fatalf("SetIfPresent returned inserted=true for non-existing key %d", i)
+		}
 	}
 
 	for i := 0; i < 1000; i++ {

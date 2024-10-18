@@ -38,12 +38,24 @@ func TestRing(t *testing.T) {
 	checkExistingKeys()
 
 	// SetIfPresent on existing key or non-existing key does not result in eviction
-	for i := range []int{0, 5, 14} {
-		c.SetIfPresent(strconv.Itoa(i), strconv.Itoa(i))
+	_, inserted := c.SetIfPresent(strconv.Itoa(0), strconv.Itoa(0))
+	if inserted {
+		t.Error("SetIfPresent returned inserted=true for non-existing key 0")
 	}
 
 	if _, err := c.Get(strconv.Itoa(0)); err != ErrNotFound {
 		t.Errorf("Get(%d): expected ErrNotFound, but got %v", 0, err)
+	}
+
+	for _, i := range []int{5, 6, 14} {
+		old, inserted := c.SetIfPresent(strconv.Itoa(i), strconv.Itoa(i))
+		if !inserted {
+			t.Error("SetIfPresent returned inserted=false for existing key")
+		}
+
+		if old != strconv.Itoa(i) {
+			t.Errorf("SetIfPresent returned incorrect old value, expected %d, got %s", i, old)
+		}
 	}
 
 	checkExistingKeys()

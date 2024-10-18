@@ -1,5 +1,1 @@
-.idea/.gitignore
-.idea/geche.iml
-.idea/material_theme_project_new.xml
-.idea/modules.xml
-.idea/vcs.xml
+.idea/*
