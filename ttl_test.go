@@ -2,6 +2,7 @@ package geche
 
 import (
 	"context"
+	"math/rand"
 	"strconv"
 	"testing"
 	"time"
@@ -171,6 +172,115 @@ func TestTTLScenario(t *testing.T) {
 	// Cleanup should remove all even values.
 	if len(c.data) != 5 {
 		t.Errorf("expected cache data len to be 5 but got %d", len(c.data))
+	}
+}
+
+func TestHeadTailLogicConcurrent(t *testing.T) {
+	m := NewMapTTLCache[string, string](context.Background(), time.Millisecond, time.Hour)
+
+	pool := make([]string, 50)
+	for i := range pool {
+		pool[i] = randomString(10)
+	}
+
+	for i := 0; i < 1000; i++ {
+		idx := rand.Intn(len(pool))
+		go func() {
+			_, err := m.Get(pool[idx])
+			if err != nil {
+				m.Set(pool[idx], pool[idx])
+			}
+		}()
+	}
+
+	time.Sleep(time.Second)
+
+	var expectedHeadKey, expectedTailKey string
+	var expectedHeadValue, expectedTailValue ttlRec[string, string]
+
+	keys := map[string]struct{}{}
+
+	for k, v := range m.data {
+		keys[k] = struct{}{}
+		if expectedTailKey == "" {
+			expectedTailKey = k
+			expectedHeadKey = k
+			expectedHeadValue = v
+			expectedTailValue = v
+		} else if expectedTailValue.timestamp.Before(v.timestamp) {
+			expectedTailKey = k
+			expectedTailValue = v
+		} else if expectedHeadValue.timestamp.After(v.timestamp) {
+			expectedHeadKey = k
+			expectedHeadValue = v
+		}
+	}
+
+	for k, v := range m.data {
+		if _, ok := keys[v.next]; k != m.tail && !ok {
+			t.Errorf("expected key %q not found in data", v.next)
+		}
+
+		if _, ok := keys[v.prev]; k != m.head && !ok {
+			t.Errorf("expected key %q not found in data", v.prev)
+		}
+	}
+
+	if m.head != expectedHeadKey {
+		t.Errorf("expected head key %q, but got %v", expectedHeadKey, m.head)
+	}
+
+	if m.tail != expectedTailKey {
+		t.Errorf("expected tail key %q, but got %v", expectedTailKey, m.tail)
+	}
+
+	if err := m.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
+
+	if m.Len() != 0 {
+		t.Errorf("expected clean to have %d elements, but got %d", 0, m.Len())
+	}
+}
+
+func TestReinsertHead(t *testing.T) {
+	c := NewMapTTLCache[string, string](context.Background(), time.Millisecond, time.Second)
+	c.Set("k1", "v1")
+	c.Set("k2", "v2")
+	c.Set("k3", "v3")
+	c.Set("k1", "v2")
+	time.Sleep(2 * time.Millisecond)
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected cleanup error: %v", err)
+	}
+
+	if c.Len() != 0 {
+		t.Errorf("expected cache data len to be 0 but got %d", c.Len())
+	}
+}
+
+func TestReinsertTail(t *testing.T) {
+	c := NewMapTTLCache[string, string](context.Background(), time.Millisecond, time.Second)
+	c.Set("k1", "v1")
+	c.Set("k2", "v2")
+	c.Set("k3", "v3")
+	c.Set("k3", "v4")
+	time.Sleep(2 * time.Millisecond)
+
+	if c.data["k3"].next != "" {
+		t.Errorf("expected tail next to be zero")
+	}
+
+	if c.data["k3"].prev != "k2" {
+		t.Errorf("expected tail prev to be k2, but got %s", c.data["k3"].prev)
+	}
+
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected cleanup error: %v", err)
+	}
+
+	if c.Len() != 0 {
+		t.Errorf("expected cache data len to be 0 but got %d", c.Len())
 	}
 }
 
