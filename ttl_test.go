@@ -187,8 +187,9 @@ func TestHeadTailLogicConcurrent(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for i := 0; i < 1000; i++ {
 		idx := rand.Intn(len(pool))
+		wg.Add(1)
+
 		go func() {
-			wg.Add(1)
 			defer wg.Done()
 
 			_, err := m.Get(pool[idx])
