@@ -93,6 +93,10 @@ func TestLockerRPanics(t *testing.T) {
 		t.Errorf("expected panic (Delete on RLocked)")
 	}
 
+	if !panics(func() { tx.SetIfPresent(1, 1) }) {
+		t.Errorf("expected panic (SetIfPresent on RLocked)")
+	}
+
 	tx.Unlock()
 	if !panics(func() { tx.Unlock() }) {
 		t.Errorf("expected panic (Unlock on already unlocked)")
@@ -116,6 +120,10 @@ func TestLockerRPanics(t *testing.T) {
 
 	if !panics(func() { tx.Snapshot() }) {
 		t.Errorf("expected panic (Snapshot on already unlocked)")
+	}
+
+	if !panics(func() { tx.SetIfPresent(1, 1) }) {
+		t.Errorf("expected panic (SetIfPresent on already unlocked)")
 	}
 }
 

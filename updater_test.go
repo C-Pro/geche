@@ -103,6 +103,47 @@ func TestUpdaterScenario(t *testing.T) {
 	}
 }
 
+func TestUpdaterSetIfPresent(t *testing.T) {
+	u := NewCacheUpdater[string, string](
+		NewMapCache[string, string](),
+		updateFn,
+		2,
+	)
+
+	if u.Len() != 0 {
+		t.Errorf("expected length to be 0, but got %d", u.Len())
+	}
+
+	s, inserted := u.SetIfPresent("test", "test")
+	if inserted {
+		t.Error("expected not to insert the value")
+	}
+
+	if s != "" {
+		t.Errorf("expected to get empty string, but got %q", s)
+	}
+
+	u.Set("test", "test")
+
+	s, inserted = u.SetIfPresent("test", "test2")
+	if !inserted {
+		t.Error("expected to insert the value")
+	}
+
+	if s != "test" {
+		t.Errorf("expected to get %q, but got %q", "test", s)
+	}
+
+	v, err := u.Get("test")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+
+	if v != "test2" {
+		t.Errorf("expected to get %q, but got %q", "test2", v)
+	}
+}
+
 func TestUpdaterErr(t *testing.T) {
 	u := NewCacheUpdater[string, string](
 		NewMapCache[string, string](),

@@ -190,29 +190,46 @@ func (c *MapTTLCache[K, V]) Len() int {
 }
 
 func (c *MapTTLCache[K, V]) set(key K, value V) {
+	ts := c.now()
 	val := ttlRec[K, V]{
 		value:     value,
 		prev:      c.tail,
-		timestamp: c.now(),
+		timestamp: ts,
 	}
 
 	if c.head == c.zero {
 		c.head = key
 		c.tail = key
-		val.prev = c.zero
 		c.data[key] = val
 		return
 	}
 
+	// If it's already the tail, we only need to update the value and timestamp
+	if c.tail == key {
+		rec := c.data[c.tail]
+		rec.timestamp = ts
+		rec.value = value
+		c.data[c.tail] = rec
+		return
+	}
+
 	// If the record for this key already exists
-	// and is somewhere in the middle of the list
+	// and is not already the tail of the list,
 	// removing it before adding to the tail.
-	if rec, ok := c.data[key]; ok && key != c.tail {
-		prev := c.data[rec.prev]
+	if rec, ok := c.data[key]; ok {
 		next := c.data[rec.next]
-		prev.next = rec.next
-		next.prev = rec.prev
-		c.data[rec.prev] = prev
+
+		// edge case: the current head becomes the new tail
+		if key == c.head {
+			c.head = rec.next
+			next.prev = c.zero
+		} else {
+			prev := c.data[rec.prev]
+			prev.next = rec.next
+			c.data[rec.prev] = prev
+			next.prev = rec.prev
+		}
+
 		c.data[rec.next] = next
 	}
 
