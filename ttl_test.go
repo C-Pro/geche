@@ -177,7 +177,10 @@ func TestTTLScenario(t *testing.T) {
 }
 
 func TestHeadTailLogicConcurrent(t *testing.T) {
-	m := NewMapTTLCache[string, string](context.Background(), time.Millisecond, time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m := NewMapTTLCache[string, string](ctx, time.Millisecond, time.Hour)
 
 	pool := make([]string, 50)
 	for i := range pool {
@@ -247,6 +250,14 @@ func TestHeadTailLogicConcurrent(t *testing.T) {
 
 	if m.Len() != 0 {
 		t.Errorf("expected clean to have %d elements, but got %d", 0, m.Len())
+	}
+
+	if m.tail != m.zero {
+		t.Errorf("expected tail to be zero, but got %v", m.tail)
+	}
+
+	if m.head != m.zero {
+		t.Errorf("expected head to be zero, but got %v", m.head)
 	}
 }
 
