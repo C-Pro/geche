@@ -4,9 +4,10 @@ import (
 	"sync"
 )
 
-type bufferRec[K comparable, V any] struct {
-	value V
-	key   K
+type BufferRec[K comparable, V any] struct {
+	K     K
+	V     V
+	empty bool
 }
 
 // RingBuffer cache preallocates a fixed number of elements and
@@ -14,10 +15,9 @@ type bufferRec[K comparable, V any] struct {
 // The idea is to reduce allocations and GC pressure while having
 // fixed memory footprint (does not grow).
 type RingBuffer[K comparable, V any] struct {
-	data  []bufferRec[K, V]
+	data  []BufferRec[K, V]
 	index map[K]int
 	head  int
-	zeroK K
 	zeroV V
 	mux   sync.RWMutex
 }
@@ -26,12 +26,17 @@ type RingBuffer[K comparable, V any] struct {
 // This number of records is preallocated immediately. RingBuffer cache can't hold more
 // than size values.
 func NewRingBuffer[K comparable, V any](size int) *RingBuffer[K, V] {
-	return &RingBuffer[K, V]{
-		data:  make([]bufferRec[K, V], size),
+	b := RingBuffer[K, V]{
+		data:  make([]BufferRec[K, V], size),
 		index: make(map[K]int, size),
-		zeroK: zero[K](),
 		zeroV: zero[V](),
 	}
+
+	for i := 0; i < size; i++ {
+		b.data[i].empty = true
+	}
+
+	return &b
 }
 
 // Set adds value to the ring buffer and key index.
@@ -41,12 +46,13 @@ func (c *RingBuffer[K, V]) Set(key K, value V) {
 	// Remove the key which value we are overwriting
 	// from the map. GC does not cleanup preallocated map,
 	// so no pressure here.
-	if old := c.data[c.head]; old.key != c.zeroK {
-		delete(c.index, old.key)
+	if old := c.data[c.head]; !old.empty {
+		delete(c.index, old.K)
 	}
 
-	c.data[c.head].key = key
-	c.data[c.head].value = value
+	c.data[c.head].K = key
+	c.data[c.head].V = value
+	c.data[c.head].empty = false
 	c.index[key] = c.head
 	c.head = (c.head + 1) % len(c.data)
 }
@@ -57,8 +63,8 @@ func (c *RingBuffer[K, V]) SetIfPresent(key K, value V) (V, bool) {
 
 	i, present := c.index[key]
 	if present {
-		oldVal := c.data[i].value
-		c.data[i].value = value
+		oldVal := c.data[i].V
+		c.data[i].V = value
 		return oldVal, present
 	}
 
@@ -75,7 +81,7 @@ func (c *RingBuffer[K, V]) Get(key K) (V, error) {
 		return c.zeroV, ErrNotFound
 	}
 
-	return c.data[i].value, nil
+	return c.data[i].V, nil
 }
 
 // Del removes key from the cache. Return value is always nil.
@@ -83,6 +89,13 @@ func (c *RingBuffer[K, V]) Del(key K) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
+	idx, ok := c.index[key]
+	if !ok {
+		return nil
+	}
+
+	// Mark item as deleted.
+	c.data[idx].empty = true
 	delete(c.index, key)
 
 	return nil
@@ -96,7 +109,7 @@ func (c *RingBuffer[K, V]) Snapshot() map[K]V {
 
 	snapshot := make(map[K]V, len(c.index))
 	for k, i := range c.index {
-		snapshot[k] = c.data[i].value
+		snapshot[k] = c.data[i].V
 	}
 
 	return snapshot
@@ -108,4 +121,21 @@ func (c *RingBuffer[K, V]) Len() int {
 	defer c.mux.RUnlock()
 
 	return len(c.index)
+}
+
+// ListAll returns all key-value pairs in the cache in the order they were added.
+func (c *RingBuffer[K, V]) ListAll() []BufferRec[K, V] {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	res := make([]BufferRec[K, V], 0, len(c.index))
+	for i := 0; i < len(c.data); i++ {
+		idx := (c.head + i) % len(c.data)
+		if c.data[idx].empty {
+			continue // Skip empty items.
+		}
+		res = append(res, BufferRec[K, V]{K: c.data[idx].K, V: c.data[idx].V})
+	}
+
+	return res
 }
