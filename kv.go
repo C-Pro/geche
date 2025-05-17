@@ -176,11 +176,7 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		err       error
 		val       V
 	)
-	for {
-		if len(stack) == 0 {
-			break
-		}
-
+	for len(stack) > 0 {
 		// Pop the top node from the stack.
 		top = stack[len(stack)-1]
 		stack = stack[:len(stack)-1]

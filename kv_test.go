@@ -900,10 +900,11 @@ func FuzzMonkey(f *testing.F) {
 		task := randTask(seed)
 		golden := make(map[string]struct{}, len(task))
 		for _, cmd := range task {
-			if cmd.action == "Set" {
+			switch cmd.action {
+			case "Set":
 				kv.Set(cmd.key, cmd.key)
 				golden[cmd.key] = struct{}{}
-			} else if cmd.action == "Del" {
+			case "Del":
 				// Since keys are random we expect a lot of Del to fail.
 				_ = kv.Del(cmd.key)
 				delete(golden, cmd.key)

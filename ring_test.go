@@ -111,7 +111,9 @@ func TestRingListAll(t *testing.T) {
 			// Randomly remove an item from the ring buffer.
 			toDelIdx := rand.Intn(len(slice))
 			toDelKey := slice[toDelIdx]
-			c.Del(toDelKey)
+			if err := c.Del(toDelKey); err != nil {
+				t.Fatalf("unexpected error in Del(%d): %v", toDelKey, err)
+			}
 			// Mark item as deleted in the slice.
 			// Acrually deleting from the slice wont'b reflect in the ring buffer,
 			// as deleted value still takes space in the ring buffer.
@@ -161,7 +163,9 @@ func TestRingListAllValues(t *testing.T) {
 			// Randomly remove an item from the ring buffer.
 			toDelIdx := rand.Intn(len(slice))
 			toDelKey := slice[toDelIdx]
-			c.Del(toDelKey)
+			if err := c.Del(toDelKey); err != nil {
+				t.Fatalf("unexpected error in Del(%d): %v", toDelKey, err)
+			}
 			// Mark item as deleted in the slice.
 			slice[toDelIdx] = -1
 		}
@@ -208,7 +212,9 @@ func TestRingListAllKeys(t *testing.T) {
 			// Randomly remove an item from the ring buffer.
 			toDelIdx := rand.Intn(len(slice))
 			toDelKey := slice[toDelIdx]
-			c.Del(toDelKey)
+			if err := c.Del(toDelKey); err != nil {
+				t.Fatalf("unexpected error in Del(%d): %v", toDelKey, err)
+			}
 			// Mark item as deleted in the slice.
 			slice[toDelIdx] = -1
 		}
@@ -255,7 +261,9 @@ func TestRingAllIterator(t *testing.T) {
 			// Randomly remove an item from the ring buffer.
 			toDelIdx := rand.Intn(len(slice))
 			toDelKey := slice[toDelIdx]
-			c.Del(toDelKey)
+			if err := c.Del(toDelKey); err != nil {
+				t.Fatalf("unexpected error in Del(%d): %v", toDelKey, err)
+			}
 			// Mark item as deleted in the slice.
 			slice[toDelIdx] = -1
 		}
@@ -420,8 +428,12 @@ func TestRingListAll_AllDeleted(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
 	c.Set(2, 20)
-	c.Del(1)
-	c.Del(2)
+	if err := c.Del(1); err != nil {
+		t.Errorf("unexpected error in Del(1): %v", err)
+	}
+	if err := c.Del(2); err != nil {
+		t.Errorf("unexpected error in Del(2): %v", err)
+	}
 	if testing.Verbose() {
 		t.Log("Testing ListAll with all elements deleted")
 	}
@@ -435,8 +447,12 @@ func TestRingListAllValues_AllDeleted(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
 	c.Set(2, 20)
-	c.Del(1)
-	c.Del(2)
+	if err := c.Del(1); err != nil {
+		t.Errorf("unexpected error in Del(1): %v", err)
+	}
+	if err := c.Del(2); err != nil {
+		t.Errorf("unexpected error in Del(2): %v", err)
+	}
 	if testing.Verbose() {
 		t.Log("Testing ListAllValues with all elements deleted")
 	}
@@ -450,8 +466,12 @@ func TestRingListAllKeys_AllDeleted(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
 	c.Set(2, 20)
-	c.Del(1)
-	c.Del(2)
+	if err := c.Del(1); err != nil {
+		t.Errorf("unexpected error in Del(1): %v", err)
+	}
+	if err := c.Del(2); err != nil {
+		t.Errorf("unexpected error in Del(2): %v", err)
+	}
 	if testing.Verbose() {
 		t.Log("Testing ListAllKeys with all elements deleted")
 	}
@@ -465,8 +485,12 @@ func TestRingAllIterator_AllDeleted(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
 	c.Set(2, 20)
-	c.Del(1)
-	c.Del(2)
+	if err := c.Del(1); err != nil {
+		t.Errorf("unexpected error in Del(1): %v", err)
+	}
+	if err := c.Del(2); err != nil {
+		t.Errorf("unexpected error in Del(2): %v", err)
+	}
 	if testing.Verbose() {
 		t.Log("Testing All iterator with all elements deleted")
 	}
