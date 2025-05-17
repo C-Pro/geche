@@ -299,11 +299,6 @@ func TestRingAllIterator(t *testing.T) {
 
 func TestRingListAll_Empty(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
-
-	if testing.Verbose() {
-		t.Log("Testing ListAll on an empty buffer")
-	}
-
 	got := c.ListAll()
 	if len(got) != 0 {
 		t.Errorf("expected 0 items, but got %d", len(got))
@@ -312,9 +307,6 @@ func TestRingListAll_Empty(t *testing.T) {
 
 func TestRingListAllValues_Empty(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
-	if testing.Verbose() {
-		t.Log("Testing ListAllValues on an empty buffer")
-	}
 	got := c.ListAllValues()
 	if len(got) != 0 {
 		t.Errorf("expected 0 values, but got %d", len(got))
@@ -323,9 +315,6 @@ func TestRingListAllValues_Empty(t *testing.T) {
 
 func TestRingListAllKeys_Empty(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
-	if testing.Verbose() {
-		t.Log("Testing ListAllKeys on an empty buffer")
-	}
 	got := c.ListAllKeys()
 	if len(got) != 0 {
 		t.Errorf("expected 0 keys, but got %d", len(got))
@@ -334,9 +323,6 @@ func TestRingListAllKeys_Empty(t *testing.T) {
 
 func TestRingAllIterator_Empty(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
-	if testing.Verbose() {
-		t.Log("Testing All iterator on an empty buffer")
-	}
 	iter := c.All()
 	count := 0
 	for range iter {
@@ -350,10 +336,6 @@ func TestRingAllIterator_Empty(t *testing.T) {
 func TestRingListAll_OneElement(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
-	if testing.Verbose() {
-		t.Log("Testing ListAll with one element")
-	}
-
 	expected := []BufferRec[int, int]{{K: 1, V: 10}}
 	got := c.ListAll()
 	if len(got) != len(expected) {
@@ -369,9 +351,6 @@ func TestRingListAll_OneElement(t *testing.T) {
 func TestRingListAllValues_OneElement(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
-	if testing.Verbose() {
-		t.Log("Testing ListAllValues with one element")
-	}
 	expected := []int{10}
 	got := c.ListAllValues()
 	if len(got) != len(expected) {
@@ -387,9 +366,6 @@ func TestRingListAllValues_OneElement(t *testing.T) {
 func TestRingListAllKeys_OneElement(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
-	if testing.Verbose() {
-		t.Log("Testing ListAllKeys with one element")
-	}
 	expected := []int{1}
 	got := c.ListAllKeys()
 	if len(got) != len(expected) {
@@ -405,9 +381,6 @@ func TestRingListAllKeys_OneElement(t *testing.T) {
 func TestRingAllIterator_OneElement(t *testing.T) {
 	c := NewRingBuffer[int, int](5)
 	c.Set(1, 10)
-	if testing.Verbose() {
-		t.Log("Testing All iterator with one element")
-	}
 	expectedItems := []BufferRec[int, int]{{K: 1, V: 10}}
 	iter := c.All()
 	var gotItems []BufferRec[int, int]
@@ -434,9 +407,6 @@ func TestRingListAll_AllDeleted(t *testing.T) {
 	if err := c.Del(2); err != nil {
 		t.Errorf("unexpected error in Del(2): %v", err)
 	}
-	if testing.Verbose() {
-		t.Log("Testing ListAll with all elements deleted")
-	}
 	got := c.ListAll()
 	if len(got) != 0 {
 		t.Errorf("expected 0 items, but got %d", len(got))
@@ -452,9 +422,6 @@ func TestRingListAllValues_AllDeleted(t *testing.T) {
 	}
 	if err := c.Del(2); err != nil {
 		t.Errorf("unexpected error in Del(2): %v", err)
-	}
-	if testing.Verbose() {
-		t.Log("Testing ListAllValues with all elements deleted")
 	}
 	got := c.ListAllValues()
 	if len(got) != 0 {
@@ -472,9 +439,6 @@ func TestRingListAllKeys_AllDeleted(t *testing.T) {
 	if err := c.Del(2); err != nil {
 		t.Errorf("unexpected error in Del(2): %v", err)
 	}
-	if testing.Verbose() {
-		t.Log("Testing ListAllKeys with all elements deleted")
-	}
 	got := c.ListAllKeys()
 	if len(got) != 0 {
 		t.Errorf("expected 0 keys, but got %d", len(got))
@@ -491,15 +455,36 @@ func TestRingAllIterator_AllDeleted(t *testing.T) {
 	if err := c.Del(2); err != nil {
 		t.Errorf("unexpected error in Del(2): %v", err)
 	}
-	if testing.Verbose() {
-		t.Log("Testing All iterator with all elements deleted")
-	}
-	iter := c.All()
 	count := 0
-	for range iter {
+	for range c.All() {
 		count++
 	}
 	if count != 0 {
 		t.Errorf("expected 0 items from iterator, but got %d", count)
+	}
+}
+
+
+func TestRingAllIterator_Break(t *testing.T) {
+	c := NewRingBuffer[int, int](10)
+	for i := 1; i <= 10; i++ {
+		c.Set(i, i)
+	}
+
+	count := 0
+	for i, j := range c.All() {
+		count++
+		if i != j {
+			t.Errorf("expected k==v, but got k=%d, v=%d", i, j)
+		}
+		if i != count {
+			t.Errorf("expected i==count, but got i=%d, count=%d", i, count)
+		}
+		if count == 5 {
+			break
+		}
+	}
+	if count != 5 {
+		t.Errorf("expected 5 items from iterator, but got %d", count)
 	}
 }
