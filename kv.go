@@ -293,7 +293,7 @@ func (kv *KV[V]) Del(key string) error {
 		stack = stack[:i]
 		if node.nextLevelHead == nil {
 			head, empty := prev.nextLevelHead.removeFromList(node.b[0])
-			if head != nil || (head == nil && empty) {
+			if head != nil || empty {
 				prev.nextLevelHead = head
 			}
 			delete(prev.down, node.b[0])
