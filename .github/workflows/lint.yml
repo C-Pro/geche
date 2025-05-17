@@ -43,7 +43,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Scan the code
-      run: /osv-scanner -r --skip-git . || if [ $? -eq 128 ]; then true; else exit $?; fi
+      run: /osv-scanner -r . || if [ $? -eq 128 ]; then true; else exit $?; fi
   golangci-lint:
     name: Run golangci-lint
     runs-on: ubuntu-latest
