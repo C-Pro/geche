@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"iter"
 	"sync"
 )
 
@@ -138,4 +139,56 @@ func (c *RingBuffer[K, V]) ListAll() []BufferRec[K, V] {
 	}
 
 	return res
+}
+
+// ListAllValues returns all values in the cache in the order they were added.
+func (c *RingBuffer[K, V]) ListAllValues() []V {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	res := make([]V, 0, len(c.index))
+	for i := 0; i < len(c.data); i++ {
+		idx := (c.head + i) % len(c.data)
+		if c.data[idx].empty {
+			continue
+		}
+		res = append(res, c.data[idx].V)
+	}
+	return res
+}
+
+// ListAllKeys returns all keys in the cache in the order they were added.
+func (c *RingBuffer[K, V]) ListAllKeys() []K {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	res := make([]K, 0, len(c.index))
+	for i := 0; i < len(c.data); i++ {
+		idx := (c.head + i) % len(c.data)
+		if c.data[idx].empty {
+			continue
+		}
+		res = append(res, c.data[idx].K)
+	}
+	return res
+}
+
+// All is a (read-only) iterator over all key-value pairs in the cache.
+// Attempt to modify the cache (Set/Del, etc.) while iterating will read to
+// a deadlock.
+func (c *RingBuffer[K, V]) All() iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		c.mux.RLock()
+		defer c.mux.RUnlock()
+
+		for i := 0; i < len(c.data); i++ {
+			idx := (c.head + i) % len(c.data)
+			if c.data[idx].empty {
+				continue
+			}
+			if !yield(c.data[idx].K, c.data[idx].V) {
+				break
+			}
+		}
+	}
 }
