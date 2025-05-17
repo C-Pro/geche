@@ -174,7 +174,7 @@ func (c *RingBuffer[K, V]) ListAllKeys() []K {
 }
 
 // All is a (read-only) iterator over all key-value pairs in the cache.
-// Attempt to modify the cache (Set/Del, etc.) while iterating will read to
+// Attempt to modify the cache (Set/Del, etc.) while iterating will lead to
 // a deadlock.
 func (c *RingBuffer[K, V]) All() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
