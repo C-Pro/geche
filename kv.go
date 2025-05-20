@@ -176,11 +176,7 @@ func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
 		err       error
 		val       V
 	)
-	for {
-		if len(stack) == 0 {
-			break
-		}
-
+	for len(stack) > 0 {
 		// Pop the top node from the stack.
 		top = stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -293,7 +289,7 @@ func (kv *KV[V]) Del(key string) error {
 		stack = stack[:i]
 		if node.nextLevelHead == nil {
 			head, empty := prev.nextLevelHead.removeFromList(node.b[0])
-			if head != nil || (head == nil && empty) {
+			if head != nil || empty {
 				prev.nextLevelHead = head
 			}
 			delete(prev.down, node.b[0])
