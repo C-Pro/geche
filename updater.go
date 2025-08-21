@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"errors"
 	"sync"
 )
 
@@ -71,7 +72,7 @@ func (u *Updater[K, V]) SetIfPresent(key K, value V) (V, bool) {
 func (u *Updater[K, V]) Get(key K) (V, error) {
 	v, err := u.cache.Get(key)
 	// Cache miss - update the cache!
-	if err == ErrNotFound {
+	if errors.Is(err, ErrNotFound) {
 		if u.waitInFlight(key) {
 			// If we had to wait, then other goroutine has already updated
 			// the cache. Returning it.
@@ -80,17 +81,25 @@ func (u *Updater[K, V]) Get(key K) (V, error) {
 
 		// Put token in the pool. Will wait if pool is full.
 		u.pool <- struct{}{}
+
 		u.mux.Lock()
-		u.inFlight[key] = make(chan struct{})
+		// another goroutine could have acquired the lock between waitInFlight and here; in this case we'll allow the
+		// current goroutine to fetch the data and return the data and let the lock owner take care of writing back
+		lockStruct, ok := u.inFlight[key]
+		if ok {
+			<-u.pool
+			u.mux.Unlock()
+			return u.updateFn(key)
+		}
+
+		lockStruct = make(chan struct{})
+		u.inFlight[key] = lockStruct
 		u.mux.Unlock()
 		defer func() {
 			// When finished cache update, releasing all locks.
 			u.mux.Lock()
-			ch, ok := u.inFlight[key]
-			if ok {
-				close(ch)
-				delete(u.inFlight, key)
-			}
+			close(lockStruct)
+			delete(u.inFlight, key)
 			u.mux.Unlock()
 			<-u.pool
 		}()

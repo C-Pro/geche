@@ -283,3 +283,30 @@ func TestUpdaterListByPrefixUnsupported(t *testing.T) {
 		t.Error("ListByPrefix expected to panic if underlying cache does not provide ListByPrefix")
 	}
 }
+
+func TestHighInflightContention(t *testing.T) {
+	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), func(key string) (string, error) {
+		return "", errors.New("not found")
+	}, 10)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = imp.Get("test")
+		}()
+	}
+
+	timer := time.NewTimer(10 * time.Second)
+
+	go func() {
+		select {
+		case <-timer.C:
+			t.Error("timed out")
+		}
+	}()
+
+	wg.Wait()
+	timer.Stop()
+}
