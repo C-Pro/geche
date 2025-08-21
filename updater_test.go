@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
@@ -281,5 +282,36 @@ func TestUpdaterListByPrefixUnsupported(t *testing.T) {
 
 	if !panics(func() { _, _ = imp.ListByPrefix("test") }) {
 		t.Error("ListByPrefix expected to panic if underlying cache does not provide ListByPrefix")
+	}
+}
+
+func TestHighInflightContention(t *testing.T) {
+	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), func(key string) (string, error) {
+		if rand.Float64() < 0.1 {
+			return "value", nil
+		}
+
+		return "", errors.New("not found")
+	}, 10)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = imp.Get("test")
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second * 5):
+		t.Error("timeout")
 	}
 }
