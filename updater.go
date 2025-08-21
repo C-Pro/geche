@@ -73,6 +73,7 @@ func (u *Updater[K, V]) Get(key K) (V, error) {
 	v, err := u.cache.Get(key)
 	// Cache miss - update the cache!
 	if errors.Is(err, ErrNotFound) {
+	wait:
 		if u.waitInFlight(key) {
 			// If we had to wait, then other goroutine has already updated
 			// the cache. Returning it.
@@ -83,22 +84,21 @@ func (u *Updater[K, V]) Get(key K) (V, error) {
 		u.pool <- struct{}{}
 
 		u.mux.Lock()
-		// another goroutine could have acquired the lock between waitInFlight and here; in this case we'll allow the
-		// current goroutine to fetch the data and return the data and let the lock owner take care of writing back
-		lockStruct, ok := u.inFlight[key]
+		// Another goroutine could have started doing update between waitInFlight and here.
+		_, ok := u.inFlight[key]
 		if ok {
 			<-u.pool
 			u.mux.Unlock()
-			return u.updateFn(key)
+			goto wait
 		}
 
-		lockStruct = make(chan struct{})
-		u.inFlight[key] = lockStruct
+		inFlightCh := make(chan struct{})
+		u.inFlight[key] = inFlightCh
 		u.mux.Unlock()
 		defer func() {
 			// When finished cache update, releasing all locks.
 			u.mux.Lock()
-			close(lockStruct)
+			close(inFlightCh)
 			delete(u.inFlight, key)
 			u.mux.Unlock()
 			<-u.pool

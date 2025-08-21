@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
@@ -286,6 +287,10 @@ func TestUpdaterListByPrefixUnsupported(t *testing.T) {
 
 func TestHighInflightContention(t *testing.T) {
 	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), func(key string) (string, error) {
+		if rand.Float64() < 0.1 {
+			return "value", nil
+		}
+
 		return "", errors.New("not found")
 	}, 10)
 
@@ -298,15 +303,15 @@ func TestHighInflightContention(t *testing.T) {
 		}()
 	}
 
-	timer := time.NewTimer(10 * time.Second)
-
+	done := make(chan struct{})
 	go func() {
-		select {
-		case <-timer.C:
-			t.Error("timed out")
-		}
+		wg.Wait()
+		close(done)
 	}()
 
-	wg.Wait()
-	timer.Stop()
+	select {
+	case <-done:
+	case <-time.After(time.Second * 5):
+		t.Error("timeout")
+	}
 }
