@@ -157,9 +157,11 @@ func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
 		testKeys[i] = strconv.Itoa(i)
 	}
 
-	b.ResetTimer()
-
 	for _, c := range tab {
+		for k := 0; k < len(testKeys); k++ {
+			c.imp.Set(testKeys[k], "value")
+		}
+
 		b.Run(c.name, func(b *testing.B) {
 			benchmarkSetIfPresent(c.imp, testKeys, b)
 		})
@@ -200,9 +202,11 @@ func BenchmarkSetIfPresentOnlyMisses(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
 
 	for _, c := range tab {
+		for k := 0; k < 10_000_000; k++ {
+			c.imp.Set(strconv.Itoa(k), "value")
+		}
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				c.imp.SetIfPresent("absent", "never set")
