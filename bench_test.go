@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const keyCardinality = 1000000
-
 type testCase struct {
 	key string
 	op  int
@@ -156,8 +154,6 @@ func BenchmarkSet(b *testing.B) {
 			benchmarkSet(c.imp, data, b)
 		})
 	}
-
-
 }
 
 func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
@@ -476,8 +472,6 @@ func BenchmarkEverything(b *testing.B) {
 			benchmarkFuzz(c.imp, data, b)
 		})
 	}
-
-
 }
 
 func randomString(n int) string {
@@ -513,7 +507,6 @@ func BenchmarkKVListByPrefix(b *testing.B) {
 		}
 	}
 }
-
 
 func BenchmarkKVCacheListByPrefix(b *testing.B) {
 	c := NewKVCache[string, string]()

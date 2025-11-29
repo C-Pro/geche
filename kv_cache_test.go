@@ -1733,3 +1733,65 @@ func TestKVCacheSnapshot(t *testing.T) {
 	}
 }
 
+func TestKVCache_DeleteMerge(t *testing.T) {
+	kv := NewKVCache[string, string]()
+	kv.Set("apple", "fruit")
+	kv.Set("apply", "verb")
+
+	// Initial state:
+	// root -> "appl" -> "e" (val=fruit)
+	//                -> "y" (val=verb)
+
+	// Delete "apple"
+	_ = kv.Del("apple")
+
+	// Expected state if merged:
+	// root -> "apply" (val=verb)
+
+	// Verify "apply" is still accessible
+	val, err := kv.Get("apply")
+	if err != nil {
+		t.Fatalf("Get('apply') failed: %v", err)
+	}
+	if val != "verb" {
+		t.Errorf("Expected 'verb', got '%s'", val)
+	}
+
+	// Verify "apple" is gone
+	_, err = kv.Get("apple")
+	if err != ErrNotFound {
+		t.Errorf("Expected ErrNotFound for 'apple', got %v", err)
+	}
+
+	// Verify iteration works
+	items := kv.Snapshot()
+	if len(items) != 1 {
+		t.Errorf("Expected 1 item, got %d", len(items))
+	}
+	if items["apply"] != "verb" {
+		t.Errorf("Snapshot content mismatch")
+	}
+}
+
+func TestKVCache_DeleteEmpty(t *testing.T) {
+	kv := NewKVCache[string, string]()
+	kv.Set("a", "val_a")
+	kv.Set("b", "val_b")
+
+	// Delete "a" - this should leave an empty node for "a" which needs cleanup
+	_ = kv.Del("a")
+
+	val, err := kv.Get("b")
+	if err != nil {
+		t.Fatalf("Get('b') failed: %v", err)
+	}
+	if val != "val_b" {
+		t.Errorf("Expected 'val_b', got '%s'", val)
+	}
+
+	_, err = kv.Get("a")
+	if err != ErrNotFound {
+		t.Errorf("Expected ErrNotFound for 'a', got %v", err)
+	}
+}
+

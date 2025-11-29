@@ -422,15 +422,21 @@ func (kv *KVCache[K, V]) delete(key string) error {
 					childIdx := path[i].childIdx
 
 					if len(node.children) == 0 && !node.terminal {
-						// Remove this child from parent
-						if parent != nil {
-							// Remove child from slice
-							copy(parent.children[childIdx:], parent.children[childIdx+1:])
-							parent.children[len(parent.children)-1] = trieCacheNode{}
-							parent.children = parent.children[:len(parent.children)-1]
-						}
+						// Case 1: Delete empty non-terminal node
+						// Remove child from slice
+						copy(parent.children[childIdx:], parent.children[childIdx+1:])
+						parent.children[len(parent.children)-1] = trieCacheNode{}
+						parent.children = parent.children[:len(parent.children)-1]
+					} else if len(node.children) == 1 && !node.terminal {
+						// Case 2: Merge node with its single child
+						child := node.children[0]
+
+						node.b = append(node.b, child.b...)
+						node.terminal = child.terminal
+						node.valueIndex = child.valueIndex
+						node.children = child.children
 					} else {
-						// Node has children or is terminal, stop cleanup
+						// Node is stable (has >1 children or is terminal), stop cleanup
 						break
 					}
 				}
@@ -535,11 +541,7 @@ func (n *trieCacheNode) findChild(c byte) (int, bool) {
 }
 
 func (n *trieCacheNode) addChild(child trieCacheNode) {
-	idx, found := n.findChild(child.b[0])
-	if found {
-		n.children[idx] = child
-		return
-	}
+	idx, _ := n.findChild(child.b[0])
 	n.addChildAt(child, idx)
 }
 
