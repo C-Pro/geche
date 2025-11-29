@@ -2,7 +2,9 @@ package geche
 
 import (
 	"context"
+	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -241,5 +243,62 @@ func TestCommon(t *testing.T) {
 				tc.theTest(t, ci.factory())
 			})
 		}
+	}
+}
+
+func TestConcurrentFuzz(t *testing.T) {
+	// This test does not do any specific checks but rather relies on race detector to find something.
+	testData := genTestData(100000)
+	numWorkers := 8
+	numIterations := 10000
+
+	for _, ci := range []struct {
+		name    string
+		factory func() Geche[string, string]
+	}{
+		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
+		{"MapTTLCache", func() Geche[string, string] {
+			return NewMapTTLCache[string, string](context.Background(), time.Millisecond*10, time.Millisecond*50)
+		}},
+		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](100000) }},
+		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
+		{"KVCache", func() Geche[string, string] { return NewKVCache[string, string]() }},
+		{"LockerMapCache", func() Geche[string, string] {
+			return NewLocker[string, string](NewMapCache[string, string]()).Lock()
+		}},
+		{
+			"ShardedMapCache", func() Geche[string, string] {
+				return NewSharded[string](
+					func() Geche[string, string] { return NewMapCache[string, string]() },
+					numWorkers,
+					&StringMapper{},
+				)
+			},
+		},
+	} {
+		t.Run(ci.name, func(t *testing.T) {
+			imp := ci.factory()
+			wg := sync.WaitGroup{}
+			for range numWorkers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					r := rand.New(rand.NewSource(time.Now().UnixNano()))
+					for i := 0; i < numIterations; i++ {
+						tc := testData[r.Intn(len(testData))]
+						switch tc.op {
+						case OPGet:
+							_, _ = imp.Get(tc.key)
+						case OPSet:
+							imp.Set(tc.key, "value")
+						case OPDel:
+							_ = imp.Del(tc.key)
+						}
+					}
+				}()
+			}
+
+			wg.Wait()
+		})
 	}
 }

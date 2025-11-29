@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"iter"
 	"sort"
 	"sync"
 )
@@ -34,14 +35,14 @@ type KVCache[K byteSlice, V any] struct {
 	zero     V
 }
 
-// NewKV creates a new KVCache wrapper.
+// NewKV creates a new KVCache.
 func NewKVCache[K byteSlice, V any]() *KVCache[K, V] {
 	return &KVCache[K, V]{
 		trie: &trieCacheNode{},
 	}
 }
 
-// Set sets the value for the key in the underlying cache and updates the trie index.
+// Set sets the value for the key.
 func (kv *KVCache[K, V]) Set(key K, value V) {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
@@ -62,7 +63,7 @@ func (kv *KVCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return kv.zero, false
 }
 
-// Get retrieves a value from the underlying cache.
+// Get retrieves a value by key.
 func (kv *KVCache[K, V]) Get(key K) (V, error) {
 	kv.mux.RLock()
 	defer kv.mux.RUnlock()
@@ -75,7 +76,7 @@ func (kv *KVCache[K, V]) Get(key K) (V, error) {
 	return v, nil
 }
 
-// Del removes the key from the underlying cache and the trie index.
+// Del removes the record by key.
 // Return value is always nil.
 func (kv *KVCache[K, V]) Del(key string) error {
 	kv.mux.Lock()
@@ -126,13 +127,109 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 	return kv.dfs(kv.trie, []byte{})
 }
 
-// Snapshot returns a copy of the underlying cache.
+// AllByPrefix returns an iterator over values with keys starting with the given prefix.
+// The iterator yields key-value pairs.
+func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
+	return func(yield func(string, V) bool) {
+		kv.mux.RLock()
+		defer kv.mux.RUnlock()
+
+		node := kv.trie
+		searchKey := []byte(prefix)
+
+		// path is the reconstructed key for the DFS traversal starting node.
+		var path []byte
+
+		if len(prefix) > 0 {
+			var pathPrefix []byte
+			for len(searchKey) > 0 {
+				idx, found := node.findChild(searchKey[0])
+				if !found {
+					return // No keys with this prefix.
+				}
+
+				child := &node.children[idx]
+				common := commonPrefixLen(child.b, searchKey)
+
+				if common < len(searchKey) {
+					if common < len(child.b) {
+						// e.g., search "ax", child has "ay...". No match.
+						return
+					}
+					// e.g., search "abc", child has "ab". Continue search in child.
+					pathPrefix = append(pathPrefix, child.b...)
+					searchKey = searchKey[common:]
+					node = child
+				} else { // common == len(searchKey)
+					// Matched prefix. The node for the next part of the key is `child`.
+					// The full path to `child` is `pathPrefix` + `child.b`.
+					path = append(pathPrefix, child.b...)
+					node = child
+					goto start_dfs
+				}
+			}
+			// This is for when the prefix matches a node path exactly
+			path = pathPrefix
+		}
+
+	start_dfs:
+		// 2. Stack-based DFS from the found node.
+		if node.terminal {
+			if !yield(string(path), kv.values[node.valueIndex]) {
+				return
+			}
+		}
+
+		type stackEntry struct {
+			node       *trieCacheNode
+			pathLength int
+		}
+
+		stack := make([]stackEntry, 0, 64)
+
+		for i := len(node.children) - 1; i >= 0; i-- {
+			stack = append(stack, stackEntry{
+				node:       &node.children[i],
+				pathLength: len(path),
+			})
+		}
+
+		// Re-use path slice for building paths of descendants
+		for len(stack) > 0 {
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+
+			path = path[:top.pathLength]
+			path = append(path, top.node.b...)
+
+			if top.node.terminal {
+				if !yield(string(path), kv.values[top.node.valueIndex]) {
+					return
+				}
+			}
+
+			for i := len(top.node.children) - 1; i >= 0; i-- {
+				stack = append(stack, stackEntry{
+					node:       &top.node.children[i],
+					pathLength: len(path),
+				})
+			}
+		}
+	}
+}
+
+// Snapshot returns a copy of the cache.
 func (kv *KVCache[K, V]) Snapshot() map[string]V {
 	kv.mux.RLock()
 	defer kv.mux.RUnlock()
 
-	res := make(map[string]V, len(kv.values))
-	// TODO: implement using kv.Seq2
+	res := make(map[string]V, kv.Len()) 
+
+	seq := kv.AllByPrefix("")
+	seq(func(k string, v V) bool { 
+		res[k] = v
+		return true
+	})
 	return res
 }
 
@@ -275,8 +372,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 func (kv *KVCache[K, V]) deleteValueAtIndex(idx int) {
 	// Clear the value, so if it is a pointer or contains pointers,
 	// GC can collect the memory.
-	var zeroV V
-	kv.values[idx] = zeroV
+	kv.values[idx] = kv.zero
 	// Add index to the freelist, so it can be reused.
 	kv.freelist = append(kv.freelist, idx)
 }

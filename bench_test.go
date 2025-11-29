@@ -132,14 +132,6 @@ func BenchmarkSet(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -165,12 +157,7 @@ func BenchmarkSet(b *testing.B) {
 		})
 	}
 
-	b.Run("AnyCache", func(b *testing.B) {
-		c := newAnyCache()
-		for i := 0; i < b.N; i++ {
-			c.Set(data[i%len(data)].key, "value")
-		}
-	})
+
 }
 
 func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
@@ -184,14 +171,6 @@ func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
 		{
 			"MapCache",
 			NewMapCache[string, string](),
-		},
-		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
 		},
 		{
 			"MapTTLCache",
@@ -236,14 +215,6 @@ func BenchmarkSetIfPresentOnlyMisses(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -284,14 +255,6 @@ func BenchmarkGetHit(b *testing.B) {
 		{
 			"MapCache",
 			NewMapCache[string, string](),
-		},
-		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
 		},
 		{
 			"MapTTLCache",
@@ -340,14 +303,6 @@ func BenchmarkGetMiss(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -388,14 +343,6 @@ func BenchmarkDelHit(b *testing.B) {
 		{
 			"MapCache",
 			NewMapCache[string, string](),
-		},
-		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
 		},
 		{
 			"MapTTLCache",
@@ -445,14 +392,6 @@ func BenchmarkDelMiss(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -497,14 +436,6 @@ func BenchmarkEverything(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -546,21 +477,7 @@ func BenchmarkEverything(b *testing.B) {
 		})
 	}
 
-	b.Run("AnyCache", func(b *testing.B) {
-		c := newAnyCache()
-		for i := 0; i < b.N; i++ {
-			key := strconv.Itoa(rand.Intn(keyCardinality))
-			r := rand.Float64()
-			switch {
-			case r < 0.9:
-				_, _ = c.Get(key)
-			case r >= 0.9 && r < 0.95:
-				_ = c.Del(key)
-			case r >= 0.95:
-				c.Set(key, "value")
-			}
-		}
-	})
+
 }
 
 func randomString(n int) string {
