@@ -127,8 +127,9 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 	return kv.dfs(kv.trie, []byte{})
 }
 
-// AllByPrefix returns an iterator over values with keys starting with the given prefix.
+// AllByPrefix returns an (read only) iterator over values with keys starting with the given prefix.
 // The iterator yields key-value pairs.
+// Attempting to modify the cache while iterating will lead to a deadlock.
 func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 	return func(yield func(string, V) bool) {
 		kv.mux.RLock()
@@ -223,10 +224,10 @@ func (kv *KVCache[K, V]) Snapshot() map[string]V {
 	kv.mux.RLock()
 	defer kv.mux.RUnlock()
 
-	res := make(map[string]V, kv.Len()) 
+	res := make(map[string]V, kv.Len())
 
 	seq := kv.AllByPrefix("")
-	seq(func(k string, v V) bool { 
+	seq(func(k string, v V) bool {
 		res[k] = v
 		return true
 	})
