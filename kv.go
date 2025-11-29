@@ -1,329 +1,138 @@
 package geche
 
 import (
-	"sort"
+	"bytes"
 	"sync"
 )
 
-// trieNode is a compact node for the radix tree.
-// It uses a sorted slice for children to minimize memory footprint compared to maps.
+// Length of key to preallocate in dfs.
+// It is not a hard limit, but keys longer than this will cause extra allocations.
+const maxKeyLength = 512
+
 type trieNode struct {
-	// b is the path segment this node represents.
+	// Node suffix. Single byte for most nodes, but can be longer for tail node.
 	b []byte
-	// children is a list of child nodes, sorted by the first byte of their 'b' segment.
-	children []*trieNode
-	// terminal indicates if this node represents the end of a valid key.
+	// depth level
+	d int
+
+	// Nodes down the tree are stored in a map.
+	down map[byte]*trieNode
+
+	// Linked list of nodes on the same level.
+	next *trieNode
+	prev *trieNode
+
+	// Fastpath to first node on the next level for DFS.
+	nextLevelHead *trieNode
+
 	terminal bool
 }
 
-// KV is a wrapper that adds ordered prefix listing capabilities to any Geche cache.
-// It maintains a trie index alongside the underlying cache.
+// Adds a new node to the linked list and returns the new head (if it has changed).
+// If head did not change, return value will be nil.
+// Should be called on the head node.
+func (n *trieNode) addToList(node *trieNode) *trieNode {
+	curr := n
+	for {
+		if node.b[0] < curr.b[0] {
+			node.prev = curr.prev
+			node.next = curr
+			curr.prev = node
+			if node.prev != nil {
+				node.prev.next = node
+			}
+
+			if curr == n {
+				// Head has changed.
+				return node
+			}
+
+			return nil
+		}
+
+		if curr.next == nil {
+			// Adding to the end of the list.
+			node.prev = curr
+			curr.next = node
+			return nil
+		}
+
+		curr = curr.next
+	}
+}
+
+// Removes node from the linked list.
+// Returns the new head (if it has changed).
+// Returns true if the list is now empty.
+// Should be called on the head node.
+// Will loop forever if node is not in the list.
+func (n *trieNode) removeFromList(c byte) (*trieNode, bool) {
+	curr := n
+	for {
+		if curr.b[0] == c {
+			if curr.prev != nil {
+				curr.prev.next = curr.next
+			}
+
+			if curr.next != nil {
+				curr.next.prev = curr.prev
+			}
+
+			if curr.prev == nil {
+				// Head has changed.
+				if curr.next == nil {
+					// List is now empty.
+					return nil, true
+				}
+				return curr.next, false
+			}
+
+			return nil, false
+		}
+
+		curr = curr.next
+	}
+}
+
 type KV[V any] struct {
 	data Geche[string, V]
 	trie *trieNode
 	mux  sync.RWMutex
 }
 
-// NewKV creates a new KV wrapper.
-func NewKV[V any](cache Geche[string, V]) *KV[V] {
-	return &KV[V]{
+func NewKV[V any](
+	cache Geche[string, V],
+) *KV[V] {
+	kv := KV[V]{
 		data: cache,
-		trie: &trieNode{},
+		trie: &trieNode{
+			down: make(map[byte]*trieNode),
+		},
 	}
+
+	return &kv
 }
 
-// Set sets the value for the key in the underlying cache and updates the trie index.
+func (kv *KV[V]) SetIfPresent(key string, value V) (V, bool) {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	previousVal, err := kv.data.Get(key)
+	if err == nil {
+		kv.set(key, value)
+		return previousVal, true
+	}
+
+	return previousVal, false
+}
+
+// Set key-value pair while updating the trie.
+// Panics if key is empty.
 func (kv *KV[V]) Set(key string, value V) {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
 
-	kv.data.Set(key, value)
-	kv.insert(key)
-}
-
-// SetIfPresent sets the value only if the key already exists.
-// Note: This implementation assumes the key presence in the underlying cache
-// implies presence in the trie, so it does not modify the trie structure.
-func (kv *KV[V]) SetIfPresent(key string, value V) (V, bool) {
-	// We don't need to touch the trie if the key exists; just update value.
-	// If the key doesn't exist in data, we do nothing.
-	return kv.data.SetIfPresent(key, value)
-}
-
-// Get retrieves a value from the underlying cache.
-func (kv *KV[V]) Get(key string) (V, error) {
-	return kv.data.Get(key)
-}
-
-// Del removes the key from the underlying cache and the trie index.
-func (kv *KV[V]) Del(key string) error {
-	kv.mux.Lock()
-	defer kv.mux.Unlock()
-
-	if err := kv.delete(key); err != nil {
-		// If trie delete failed (key not found), we still try to del from data just in case,
-		// essentially behaving idempotently.
-	}
-
-	return kv.data.Del(key)
-}
-
-// ListByPrefix returns all values with keys starting with the given prefix.
-// Result is ordered lexicographically by key.
-func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
-	kv.mux.RLock()
-	defer kv.mux.RUnlock()
-
-	// 1. Navigate to the node covering the prefix.
-	node := kv.trie
-	searchKey := []byte(prefix)
-
-	// Tracks the path string constructed so far during descent
-	var path []byte
-
-	for len(searchKey) > 0 {
-		// Find child starting with the next byte
-		idx, found := node.findChild(searchKey[0])
-		if !found {
-			return nil, nil // Prefix not found
-		}
-
-		child := node.children[idx]
-
-		// Check how much of the child's segment matches the search key
-		common := commonPrefixLen(child.b, searchKey)
-
-		// Append current segment to path for future lookup
-		path = append(path, child.b[:common]...)
-
-		if common < len(searchKey) {
-			// We haven't consumed the full search key yet.
-			if common < len(child.b) {
-				// The search key diverges from the existing path in the middle of a node.
-				// e.g. Node has "apple", we search for "apply".
-				// Common is "appl", but 'e' != 'y'. No match.
-				return nil, nil
-			}
-			// Consumed this entire node, move to next level
-			searchKey = searchKey[common:]
-			node = child
-		} else {
-			// We matched the entire search key!
-			// The rest of this node (if any) and all its children are matches.
-			// We must reconstruct the FULL path to this node for the DFS.
-
-			// If the child segment was longer than the remaining search key,
-			// we need to add the *rest* of the child segment to the path
-			// before starting DFS, because DFS assumes it starts *at* the node
-			// passed to it.
-			remainingNodeSegment := child.b[common:]
-
-			startNode := child
-			startPath := append(path, remainingNodeSegment...)
-
-			return kv.dfs(startNode, startPath)
-		}
-	}
-
-	// If we are here, the prefix was empty, so we list everything from root.
-	return kv.dfs(kv.trie, []byte{})
-}
-
-// Snapshot returns a copy of the underlying cache.
-func (kv *KV[V]) Snapshot() map[string]V {
-	return kv.data.Snapshot()
-}
-
-// Len returns the size of the underlying cache.
-func (kv *KV[V]) Len() int {
-	return kv.data.Len()
-}
-
-// --- Internal Trie Helpers ---
-
-func (kv *KV[V]) insert(key string) {
-	node := kv.trie
-	keyBytes := []byte(key)
-
-	// Empty key is stored at the root
-	if len(keyBytes) == 0 {
-		node.terminal = true
-		return
-	}
-
-	for len(keyBytes) > 0 {
-		idx, found := node.findChild(keyBytes[0])
-
-		if !found {
-			// No matching child, insert a new leaf node for the rest of the key
-			newNode := &trieNode{
-				b:        keyBytes,
-				terminal: true,
-			}
-			node.addChildAt(newNode, idx)
-			return
-		}
-
-		child := node.children[idx]
-		common := commonPrefixLen(child.b, keyBytes)
-
-		// Case 1: The child matches the key prefix entirely.
-		// e.g. child="test", key="tester" (common=4)
-		if common == len(child.b) {
-			keyBytes = keyBytes[common:]
-			node = child
-			// If key is exhausted, mark this existing node as terminal
-			if len(keyBytes) == 0 {
-				node.terminal = true
-			}
-			continue
-		}
-
-		// Case 2: Partial match. We need to split the child node.
-		// e.g. child="testing", key="tester" (common=4 "test")
-
-		// 1. Shrink the child to the common prefix
-		// We create a new node 'branch' that represents the common part.
-		// Actually, we can reuse the 'child' struct as the branch to keep pointers valid,
-		// and move its original distinct suffix to a new child.
-
-		origSuffix := child.b[common:]
-		newSuffix := keyBytes[common:]
-
-		// Create a node representing the rest of the original child
-		restNode := &trieNode{
-			b:        origSuffix,
-			children: child.children, // Inherit children
-			terminal: child.terminal, // Inherit terminal status
-		}
-
-		// Reset current child to be the common prefix branch
-		child.b = child.b[:common]
-		child.children = []*trieNode{} // Clear children, we will add restNode back
-		child.terminal = false         // It's a branch now (unless new key ends here)
-
-		// Add the rest of the original node as a child
-		child.addChild(restNode)
-
-		// Now handle the new key part
-		if len(newSuffix) == 0 {
-			// The new key ended exactly at the split point
-			child.terminal = true
-		} else {
-			// The new key continues
-			newNode := &trieNode{
-				b:        newSuffix,
-				terminal: true,
-			}
-			child.addChild(newNode)
-		}
-		return
-	}
-}
-
-func (kv *KV[V]) delete(key string) error {
-	// Recursive deletion to handle cleanup of empty nodes on the way up.
-	// Returns true if the child should be removed from the parent's list.
-	var del func(n *trieNode, k []byte) bool
-	del = func(n *trieNode, k []byte) bool {
-		if len(k) == 0 {
-			if n.terminal {
-				n.terminal = false
-				// If leaf (no children), prune it.
-				return len(n.children) == 0
-			}
-			return false // Key not found or already deleted
-		}
-
-		idx, found := n.findChild(k[0])
-		if !found {
-			return false // Key not found
-		}
-
-		child := n.children[idx]
-		common := commonPrefixLen(child.b, k)
-
-		// If path doesn't match fully, key isn't here
-		if common != len(child.b) {
-			return false
-		}
-
-		// Recursively delete from child
-		shouldRemove := del(child, k[common:])
-
-		if shouldRemove {
-			// Remove child from slice
-			copy(n.children[idx:], n.children[idx+1:])
-			n.children[len(n.children)-1] = nil // avoid memory leak
-			n.children = n.children[:len(n.children)-1]
-
-			// If n is not terminal and has no children, it can be pruned too
-			return !n.terminal && len(n.children) == 0
-		}
-
-		return false
-	}
-
-	// We don't delete the root, just its children
-	del(kv.trie, []byte(key))
-	return nil
-}
-
-func (kv *KV[V]) dfs(node *trieNode, currentPath []byte) ([]V, error) {
-	var res []V
-
-	if node.terminal {
-		// Key reconstruction complete, fetch from data
-		val, err := kv.data.Get(string(currentPath))
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, val)
-	}
-
-	for _, child := range node.children {
-		// Construct path for child
-		// Note: append creates a new slice, which is safer for recursion than sharing a buffer
-		// though slightly more allocation heavy. Given maxKeyLength constraint is theoretical,
-		// this is robust.
-		childPath := append(currentPath, child.b...)
-		childRes, err := kv.dfs(child, childPath)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, childRes...)
-	}
-	return res, nil
-}
-
-// findChild performs a binary search to find the child index.
-func (n *trieNode) findChild(c byte) (int, bool) {
-	idx := sort.Search(len(n.children), func(i int) bool {
-		return n.children[i].b[0] >= c
-	})
-	if idx < len(n.children) && n.children[idx].b[0] == c {
-		return idx, true
-	}
-	return idx, false
-}
-
-// addChild adds a child in sorted order.
-func (n *trieNode) addChild(child *trieNode) {
-	idx, found := n.findChild(child.b[0])
-	if found {
-		// Should not happen in this logic unless overwriting,
-		// but if so, replace.
-		n.children[idx] = child
-		return
-	}
-	n.addChildAt(child, idx)
-}
-
-// addChildAt inserts a child at a specific index to maintain order.
-func (n *trieNode) addChildAt(child *trieNode, idx int) {
-	n.children = append(n.children, nil)
-	copy(n.children[idx+1:], n.children[idx:])
-	n.children[idx] = child
+	kv.set(key, value)
 }
 
 func commonPrefixLen(a, b []byte) int {
@@ -333,5 +142,292 @@ func commonPrefixLen(a, b []byte) int {
 			return i
 		}
 	}
+
 	return i
+}
+
+// Depth First Search starts with last node of the key prefix and traverses the trie,
+// appending all terminal nodes to the result.
+func (kv *KV[V]) dfs(node *trieNode, prefix []byte) ([]V, error) {
+	res := []V{}
+	key := make([]byte, len(prefix), maxKeyLength)
+	copy(key, prefix)
+
+	// If last node of the prefix is terminal, add it to the result.
+	if node.terminal {
+		val, err := kv.data.Get(string(prefix))
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, val)
+	}
+
+	// If the node does not contain any descendants, return.
+	if node.nextLevelHead == nil {
+		return res, nil
+	}
+
+	// Instead of recursive DFS, we use stack-based approach.
+	stack := make([]*trieNode, 0, maxKeyLength)
+	stack = append(stack, node.nextLevelHead)
+	var (
+		top       *trieNode
+		prevDepth int
+		err       error
+		val       V
+	)
+	for len(stack) > 0 {
+		// Pop the top node from the stack.
+		top = stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if top.d > prevDepth {
+			// We have descended to the next level.
+			key = append(key, top.b...)
+		} else if top.d < prevDepth {
+			// We have ascended to the previous level.
+			key = key[:top.d]
+			key[len(key)-1] = top.b[0]
+			if len(top.b) > 1 {
+				key = append(key, top.b[1:]...)
+			}
+		} else {
+			key = key[:top.d]
+			key[len(key)-1] = top.b[0]
+			if len(top.b) > 1 {
+				key = append(key, top.b[1:]...)
+			}
+		}
+		prevDepth = top.d
+
+		if top.terminal {
+			val, err = kv.data.Get(string(key))
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, val)
+		}
+
+		// Appending next node of the level to the stack.
+		if top.next != nil {
+			stack = append(stack, top.next)
+		}
+
+		// Appending next level head to the top of the stack.
+		if top.nextLevelHead != nil {
+			stack = append(stack, top.nextLevelHead)
+		}
+	}
+
+	return res, nil
+}
+
+func (kv *KV[V]) ListByPrefix(prefix string) ([]V, error) {
+	kv.mux.RLock()
+	defer kv.mux.RUnlock()
+
+	node := kv.trie
+	for i := 0; i < len(prefix); i++ {
+		next := node.down[prefix[i]]
+		if next == nil {
+			return nil, nil
+		}
+		// If we reached a multibyte tail node, we can return its value,
+		// since tail nodes have no descendants.
+		if len(next.b) > 1 && len(next.b) >= len(prefix)-i {
+			if bytes.Equal(next.b[:len(prefix)-i], []byte(prefix)[i:]) {
+				v, err := kv.data.Get(prefix + string(next.b[len(prefix)-i:]))
+				return []V{v}, err
+			}
+		}
+		node = next
+	}
+
+	return kv.dfs(node, []byte(prefix))
+}
+
+// Get value by key from the underlying cache.
+func (kv *KV[V]) Get(key string) (V, error) {
+	return kv.data.Get(key)
+}
+
+// Del key from the underlying cache.
+func (kv *KV[V]) Del(key string) error {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	node := kv.trie
+	stack := []*trieNode{}
+	found := false
+	for i := 0; i < len(key); i++ {
+		next := node.down[key[i]]
+		if next == nil {
+			// If we are here, the key does not exist.
+			return kv.data.Del(key)
+		}
+
+		stack = append(stack, node)
+		node = next
+		if bytes.Equal(node.b, []byte(key)[i:]) {
+			if node.terminal {
+				found = true
+			}
+			break
+		}
+	}
+
+	if !found {
+		// If we are here, the key does not exist.
+		return kv.data.Del(key)
+	}
+
+	node.terminal = false
+
+	// Go back the stack removing nodes with no descendants.
+	for i := len(stack) - 1; i >= 0; i-- {
+		prev := stack[i]
+		stack = stack[:i]
+		if node.nextLevelHead == nil {
+			head, empty := prev.nextLevelHead.removeFromList(node.b[0])
+			if head != nil || empty {
+				prev.nextLevelHead = head
+			}
+			delete(prev.down, node.b[0])
+		}
+
+		if prev.terminal || len(prev.down) > 0 && prev == kv.trie {
+			break
+		}
+
+		node = prev
+	}
+
+	return kv.data.Del(key)
+}
+
+// Snapshot returns a shallow copy of the cache data.
+// Sequentially locks each of she undelnying shards
+// from modification for the duration of the copy.
+func (kv *KV[V]) Snapshot() map[string]V {
+	return kv.data.Snapshot()
+}
+
+// Len returns total number of elements in the underlying caches.
+func (kv *KV[V]) Len() int {
+	return kv.data.Len()
+}
+
+func (kv *KV[V]) set(key string, value V) {
+	kv.data.Set(key, value)
+
+	if key == "" {
+		kv.trie.terminal = true
+		return
+	}
+
+	keyb := []byte(key)
+	node := kv.trie
+	for len(keyb) > 0 {
+		if node.down == nil {
+			// Creating new level.
+			node.down = make(map[byte]*trieNode)
+		}
+
+		next := node.down[keyb[0]]
+		if next == nil {
+			// Creating new node.
+			next = &trieNode{
+				b: keyb,
+				d: node.d + 1,
+			}
+			node.down[keyb[0]] = next
+			if node.nextLevelHead == nil {
+				node.nextLevelHead = next
+			} else {
+				// Adding node to the linked list.
+				head := node.nextLevelHead.addToList(next)
+				if head != nil {
+					node.nextLevelHead = head
+				}
+			}
+		} else if len(next.b) == 1 {
+			// Single byte nodes are a simple case.
+		} else {
+			// Multi byte nodes require splitting.
+
+			// Removing node from the linked list.
+			head, empty := node.nextLevelHead.removeFromList(keyb[0])
+			if empty {
+				node.nextLevelHead = nil
+			} else if head != nil {
+				node.nextLevelHead = head
+			}
+
+			commonPrefixLen := commonPrefixLen(keyb, next.b)
+			for i := 0; i < commonPrefixLen; i++ {
+				// Creating new single-byte node.
+				newNode := &trieNode{
+					b:    []byte{keyb[i]},
+					d:    node.d + 1,
+					down: make(map[byte]*trieNode),
+				}
+				node.down[keyb[i]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+
+				node = newNode
+			}
+
+			if (bytes.Equal(next.b, keyb[:commonPrefixLen]) && next.terminal) || len(keyb) == commonPrefixLen {
+				// If last node is end of key, or end of the node we are splitting, mark it as terminal.
+				node.terminal = true
+			}
+
+			// Adding removed node back.
+			if len(next.b) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        next.b[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[next.b[commonPrefixLen]] = newNode
+				node.nextLevelHead = newNode
+			}
+
+			// Adding new tail node.
+			if len(keyb) > commonPrefixLen {
+				// Creating new suffix (potentially multi-byte) node.
+				newNode := &trieNode{
+					b:        keyb[commonPrefixLen:],
+					d:        node.d + 1,
+					terminal: true,
+				}
+				node.down[keyb[commonPrefixLen]] = newNode
+				if node.nextLevelHead == nil {
+					node.nextLevelHead = newNode
+				} else {
+					head := node.nextLevelHead.addToList(newNode)
+					if head != nil {
+						node.nextLevelHead = head
+					}
+				}
+			}
+
+			// keyb = keyb[commonPrefixLen:]
+			// continue
+			return
+		}
+
+		keyb = keyb[commonPrefixLen(keyb, next.b):]
+		node = next
+	}
+
+	node.terminal = true
 }

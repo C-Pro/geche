@@ -1,6 +1,7 @@
 package geche
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -347,7 +348,7 @@ func (m *MockErrCache) Get(key string) (string, error) {
 
 func TestKVAlloc(t *testing.T) {
 	cache := NewMapCache[string, string]()
-	kv := NewKV(cache)
+	kv := NewKV[string](cache)
 
 	var (
 		mBefore, mAfter runtime.MemStats
@@ -356,11 +357,16 @@ func TestKVAlloc(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&mBefore)
 
-	for i := 0; i < 1_000_000; i++ {
+	for i := 0; i < 10000; i++ {
 		key := genRandomString(rand.Intn(300) + 1)
 		rawDataLen += int64(len(key) * 2)
 
 		kv.Set(key, key)
+	}
+
+	for i := 0; i < 10000; i++ {
+		key := genRandomString(rand.Intn(300) + 1)
+		kv.SetIfPresent(key, key)
 	}
 
 	runtime.GC()
@@ -388,12 +394,12 @@ func TestKVAlloc(t *testing.T) {
 		}
 	}
 
-	if len(kv.trie.children) > 0 {
-		t.Log(kv.trie.children)
+	if len(kv.trie.down) > 0 {
+		t.Log(kv.trie.down)
 		t.Errorf("trie is not empty")
 	}
 
-	if kv.Len() > 0 {
+	if kv.data.Len() > 0 {
 		t.Errorf("data is not empty")
 	}
 }
@@ -405,28 +411,16 @@ func TestKVDel(t *testing.T) {
 	kv.Set("foo", "bar")
 	_ = kv.Del("foo")
 
-	if _, err := kv.Get("foo"); err == nil {
-		t.Error("expected error after deleting a key, got nil")
+	if len(kv.trie.down) > 0 {
+		t.Error("trie is not empty")
 	}
 
 	kv.Set("fo", "bar")
 	kv.Set("food", "bar")
 	_ = kv.Del("food")
 
-	res, err := kv.ListByPrefix("foo")
-	if err != nil {
-		t.Fatalf("unexpected error in ListByPrefix: %v", err)
-	}
-	if len(res) != 0 {
-		t.Errorf("expected 0 results, got %d", len(res))
-	}
-
-	res, err = kv.ListByPrefix("fo")
-	if err != nil {
-		t.Fatalf("unexpected error in ListByPrefix: %v", err)
-	}
-	if len(res) != 1 {
-		t.Errorf("expected 1 results, got %d", len(res))
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expectedf root trie to have 1 element, got %d", len(kv.trie.down))
 	}
 }
 
@@ -460,6 +454,22 @@ func TestSetEmptyKey(t *testing.T) {
 	kv := NewKV[string](NewMapCache[string, string]())
 	kv.Set("", "test")
 
+	if !kv.trie.terminal {
+		t.Errorf("expected root node terminal to be true")
+	}
+	if len(kv.trie.down) > 0 {
+		t.Errorf("expected root node to have no children")
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead != nil {
+		t.Errorf("expected root node to have no nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+
 	got, err := kv.Get("")
 	if err != nil {
 		t.Fatalf("unexpected error in Get: %v", err)
@@ -485,12 +495,38 @@ func TestTwoSingleChar(t *testing.T) {
 	kv.Set("a", "test1")
 	kv.Set("b", "test2")
 
+	if len(kv.trie.down) > 2 {
+		t.Errorf("expected root node to have 2 children, got %d", len(kv.trie.down))
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead == nil {
+		t.Errorf("expected root node to have nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.b, []byte("a")) {
+		t.Errorf("expected nextLevelHead.b to be %q, got %q", "a", kv.trie.nextLevelHead.b)
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.next.b, []byte("b")) {
+		t.Errorf("expected nextLevelHead.next.b to be %q, got %q", "b", kv.trie.nextLevelHead.b)
+	}
+
 	values, err := kv.ListByPrefix("")
 	if err != nil {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
-	expected := []string{"test1", "test2"}
-	compareSlice(t, expected, values)
+	if len(values) != 2 {
+		t.Errorf("expected len %d, got %d", 2, len(values))
+	}
+	if values[0] != "test1" {
+		t.Errorf("expected %q, got %q", "test1", values[0])
+	}
+	if values[1] != "test2" {
+		t.Errorf("expected %q, got %q", "test2", values[0])
+	}
 }
 
 func TestSetTwoDepth(t *testing.T) {
@@ -498,12 +534,41 @@ func TestSetTwoDepth(t *testing.T) {
 	kv.Set("a", "test1")
 	kv.Set("ab", "test2")
 
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expected root node to have 1 children, got %d", len(kv.trie.down))
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead == nil {
+		t.Errorf("expected root node to have nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.b, []byte("a")) {
+		t.Errorf("expected nextLevelHead.b to be %q, got %q", "a", kv.trie.nextLevelHead.b)
+	}
+	if kv.trie.nextLevelHead.next != nil {
+		t.Error("expected nextLevelHead.next to be nil")
+	}
+	if len(kv.trie.nextLevelHead.down) != 1 {
+		t.Errorf("expected nextLevelHead.down to have 1 element, got %d", len(kv.trie.nextLevelHead.down))
+	}
+
 	values, err := kv.ListByPrefix("")
 	if err != nil {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
-	expected := []string{"test1", "test2"}
-	compareSlice(t, expected, values)
+	if len(values) != 2 {
+		t.Errorf("expected len %d, got %d", 2, len(values))
+	}
+	if values[0] != "test1" {
+		t.Errorf("expected %q, got %q", "test1", values[0])
+	}
+	if values[1] != "test2" {
+		t.Errorf("expected %q, got %q", "test2", values[0])
+	}
 }
 
 func TestSetTwoDepthReverseOrder(t *testing.T) {
@@ -513,12 +578,41 @@ func TestSetTwoDepthReverseOrder(t *testing.T) {
 	kv.Set("ab", "test2")
 	kv.Set("a", "test1")
 
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expected root node to have 1 children, got %d", len(kv.trie.down))
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead == nil {
+		t.Errorf("expected root node to have nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.b, []byte("a")) {
+		t.Errorf("expected nextLevelHead.b to be %q, got %q", "a", kv.trie.nextLevelHead.b)
+	}
+	if kv.trie.nextLevelHead.next != nil {
+		t.Error("expected nextLevelHead.next to be nil")
+	}
+	if len(kv.trie.nextLevelHead.down) != 1 {
+		t.Errorf("expected nextLevelHead.down to have 1 element, got %d", len(kv.trie.nextLevelHead.down))
+	}
+
 	values, err := kv.ListByPrefix("")
 	if err != nil {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
-	expected := []string{"test1", "test2"}
-	compareSlice(t, expected, values)
+	if len(values) != 2 {
+		t.Errorf("expected len %d, got %d (%v)", 2, len(values), values)
+	}
+	if values[0] != "test1" {
+		t.Errorf("expected %q, got %q", "test1", values[0])
+	}
+	if values[1] != "test2" {
+		t.Errorf("expected %q, got %q", "test2", values[0])
+	}
 }
 
 func TestSetAppendTail(t *testing.T) {
@@ -526,12 +620,41 @@ func TestSetAppendTail(t *testing.T) {
 	kv.Set("ab", "test2")
 	kv.Set("abc", "test1")
 
+	if len(kv.trie.down) != 1 {
+		t.Errorf("expected root node to have 1 child, got %d", len(kv.trie.down))
+	}
+	if len(kv.trie.b) > 0 {
+		t.Errorf("expected root node to have no key")
+	}
+	if kv.trie.nextLevelHead == nil {
+		t.Errorf("expected root node to have nextLevelHead")
+	}
+	if kv.trie.next != nil || kv.trie.prev != nil {
+		t.Errorf("expected root node to have no next or prev")
+	}
+	if !bytes.Equal(kv.trie.nextLevelHead.b, []byte("a")) {
+		t.Errorf("expected nextLevelHead.b to be %q, got %q", "a", kv.trie.nextLevelHead.b)
+	}
+	if kv.trie.nextLevelHead.next != nil {
+		t.Error("expected nextLevelHead.next to be nil")
+	}
+	if len(kv.trie.nextLevelHead.down) != 1 {
+		t.Errorf("expected nextLevelHead.down to have 1 element, got %d", len(kv.trie.nextLevelHead.down))
+	}
+
 	values, err := kv.ListByPrefix("")
 	if err != nil {
 		t.Fatalf("unexpected error in ListByPrefix: %v", err)
 	}
-	expected := []string{"test2", "test1"}
-	compareSlice(t, expected, values)
+	if len(values) != 2 {
+		t.Errorf("expected len %d, got %d (%v)", 2, len(values), values)
+	}
+	if values[0] != "test2" {
+		t.Errorf("expected %q, got %q", "test2", values[0])
+	}
+	if values[1] != "test1" {
+		t.Errorf("expected %q, got %q", "test1", values[0])
+	}
 }
 
 func TestSet3(t *testing.T) {
@@ -609,11 +732,11 @@ func TestSetIfPresent(t *testing.T) {
 
 	old, inserted = kv.SetIfPresent("a", "test6")
 	if !inserted {
-		t.Errorf("key \"a\" is present in kv, SetIfPresent should return true")
+		t.Errorf("key \"abracadabra\" is present in kv, SetIfPresent should return true")
 	}
 
 	if old != "test5" {
-		t.Errorf("old value associated with \"a\" is not \"test5\"")
+		t.Errorf("old value associated with \"a\" is not \"test2\"")
 	}
 
 	if _, inserted := kv.SetIfPresent("d", "test3"); inserted {

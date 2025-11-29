@@ -178,8 +178,8 @@ func (c *RingBuffer[K, V]) ListAllKeys() []K {
 // a deadlock.
 func (c *RingBuffer[K, V]) All() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		c.mux.RLock()
-		defer c.mux.RUnlock()
+		c.mux.Lock()
+		defer c.mux.Unlock()
 
 		for i := 0; i < len(c.data); i++ {
 			idx := (c.head + i) % len(c.data)
