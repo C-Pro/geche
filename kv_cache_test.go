@@ -494,8 +494,8 @@ func TestKVCacheSetIfPresent(t *testing.T) {
 		t.Errorf("key \"a\" is present in cache, SetIfPresent should return true")
 	}
 
-	if old != "test5" {
-		t.Errorf("old value is %q, SetIfPresent should return the new value", old)
+	if old != "test2" {
+		t.Errorf("expected %q, got %q", "test2", old)
 	}
 
 	old, inserted = cache.SetIfPresent("a", "test6")
@@ -503,8 +503,8 @@ func TestKVCacheSetIfPresent(t *testing.T) {
 		t.Errorf("key \"a\" is present in cache, SetIfPresent should return true")
 	}
 
-	if old != "test6" {
-		t.Errorf("value associated with \"a\" should be \"test6\"")
+	if old != "test5" {
+		t.Errorf("expected %q, got %q", "test5", old)
 	}
 
 	if _, inserted := cache.SetIfPresent("d", "test3"); inserted {
@@ -1794,4 +1794,3 @@ func TestKVCache_DeleteEmpty(t *testing.T) {
 		t.Errorf("Expected ErrNotFound for 'a', got %v", err)
 	}
 }
-

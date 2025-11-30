@@ -55,9 +55,9 @@ func (kv *KVCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
 
-	if _, found := kv.get(key); found {
+	if old, found := kv.get(key); found {
 		kv.insert(key, value)
-		return value, true
+		return old, true
 	}
 
 	return kv.zero, false
