@@ -126,6 +126,56 @@ func TestKVCacheEmptyPrefix(t *testing.T) {
 	compareSlice(t, expected, got)
 }
 
+func TestKVCacheAllByPrefixBreak(t *testing.T) {
+	cache := NewKVCache[string, string]()
+	cache.Set("abc", "abc")
+	cache.Set("a", "a")
+	cache.Set("abcd", "abcd")
+	cache.Set("ab", "ab")
+
+	cnt := 0
+	gotKeys := []string{}
+	for k, v := range cache.AllByPrefix("a") {
+		cnt++
+		if v != k {
+			t.Errorf("expected %q, got %q", k, v)
+		}
+		gotKeys = append(gotKeys, k)
+		if k == "ab" {
+			break
+		}
+	}
+
+	expectedKeys := []string{"a", "ab"}
+	compareSlice(t, expectedKeys, gotKeys)
+
+	for k, v := range cache.AllByPrefix("a") {
+		if k != "a" {
+			t.Errorf("expected %q, got %q", "a", k)
+		}
+		if v != k {
+			t.Errorf("expected %q, got %q", k, v)
+		}
+		break
+	}
+
+	for k, v := range cache.AllByPrefix("abcd") {
+		if k != "abcd" {
+			t.Errorf("expected %q, got %q", "abcd", k)
+		}
+		if v != k {
+			t.Errorf("expected %q, got %q", k, v)
+		}
+		break
+	}
+
+	// Case when last node prefix is matched but full node is not.
+	cache.Set("abcdefg", "abcdefg")
+	for range cache.AllByPrefix("abcdez") {
+		t.Errorf("expected no results")
+	}
+}
+
 func TestKVCacheEmptyPrefixDiffLen(t *testing.T) {
 	cache := NewKVCache[string, string]()
 
@@ -879,8 +929,8 @@ func ExampleKVCache_AllByPrefix() {
 	cache.Set("foo3", "bar3")
 	cache.Set("foo1", "bar1")
 
-	for k,v := range cache.AllByPrefix("foo") {
-	fmt.Println(k, v)
+	for k, v := range cache.AllByPrefix("foo") {
+		fmt.Println(k, v)
 	}
 	// Output:
 	// foo bar
@@ -1028,6 +1078,27 @@ func TestKVCacheEmptyPrefix_AllByPrefix(t *testing.T) {
 
 	compareSlice(t, expected, got)
 	compareSlice(t, expected, gotKeys)
+}
+
+func TestKVCacheExactMatch_AllByPrefix(t *testing.T) {
+	cache := NewKVCache[string, string]()
+
+	cache.Set("exact", "exact_value")
+
+	expected := []string{"exact_value"}
+	expectedKeys := []string{"exact"}
+
+	var got []string
+	var gotKeys []string
+	seq := cache.AllByPrefix("exact")
+	seq(func(k, v string) bool {
+		gotKeys = append(gotKeys, k)
+		got = append(got, v)
+		return true
+	})
+
+	compareSlice(t, expected, got)
+	compareSlice(t, expectedKeys, gotKeys)
 }
 
 func TestKVCacheEmptyPrefixDiffLen_AllByPrefix(t *testing.T) {
@@ -1707,8 +1778,8 @@ func TestKVCacheSnapshot(t *testing.T) {
 	}
 
 	// 4. Verify independence: modify original cache, snapshot should be unchanged
-	cache.Set("key4", "value4") // Add a new item
-	_ = cache.Del("key1")       // Delete an existing item
+	cache.Set("key4", "value4")    // Add a new item
+	_ = cache.Del("key1")          // Delete an existing item
 	cache.Set("key2", "newValue2") // Update an existing item
 
 	// Snapshot should still reflect the state at the time it was taken

@@ -263,11 +263,12 @@ func (kv *KVCache[K, V]) get(key K) (V, bool) {
 		node = child
 	}
 
-	if node.terminal {
-		return kv.values[node.valueIndex], true
+	// If we are here node *is* terminal.
+	if !node.terminal {
+		panic("non-terminal dangling node")
 	}
 
-	return kv.zero, false
+	return kv.values[node.valueIndex], true
 }
 
 func (kv *KVCache[K, V]) addValue(value V) int {
