@@ -126,6 +126,42 @@ func TestKVCacheEmptyPrefix(t *testing.T) {
 	compareSlice(t, expected, got)
 }
 
+func TestKVCacheGetEmptyKey(t *testing.T) {
+	cache := NewKVCache[string, string]()
+	t.Run("ValueAtEmptyKey", func(t *testing.T) {
+		cache.Set("", "empty")
+		val, err := cache.Get("")
+		if err != nil {
+			t.Fatalf("unexpected error in Get: %v", err)
+		}
+		if val != "empty" {
+			t.Errorf("expected %q, got %q", "empty", val)
+		}
+	})
+
+	t.Run("ValueAtEmptyKeyWithChildren", func(t *testing.T) {
+		cache.Set("a", "a")
+		val, err := cache.Get("")
+		if err != nil {
+			t.Fatalf("unexpected error in Get: %v", err)
+		}
+		if val != "empty" {
+			t.Errorf("expected %q, got %q", "empty", val)
+		}
+	})
+
+	t.Run("EmptyKeyMiss", func(t *testing.T) {
+		_ = cache.Del("")
+		val, err := cache.Get("")
+		if err != ErrNotFound {
+			t.Fatalf("expected error %v, got %v", ErrNotFound, err)
+		}
+		if val != "" {
+			t.Errorf("expected %q, got %q", "", val)
+		}
+	})
+}
+
 func TestKVCacheAllByPrefixBreak(t *testing.T) {
 	cache := NewKVCache[string, string]()
 	cache.Set("abc", "abc")

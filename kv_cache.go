@@ -35,7 +35,7 @@ type KVCache[K byteSlice, V any] struct {
 	zero     V
 }
 
-// NewKV creates a new KVCache.
+// NewKVCache creates a new KVCache.
 func NewKVCache[K byteSlice, V any]() *KVCache[K, V] {
 	return &KVCache[K, V]{
 		trie: &trieCacheNode{},
@@ -263,12 +263,11 @@ func (kv *KVCache[K, V]) get(key K) (V, bool) {
 		node = child
 	}
 
-	// If we are here node *is* terminal.
-	if !node.terminal {
-		panic("non-terminal dangling node")
+	if node.terminal {
+		return kv.values[node.valueIndex], true
 	}
 
-	return kv.values[node.valueIndex], true
+	return kv.zero, false
 }
 
 func (kv *KVCache[K, V]) addValue(value V) int {
