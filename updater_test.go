@@ -315,3 +315,22 @@ func TestHighInflightContention(t *testing.T) {
 		t.Error("timeout")
 	}
 }
+
+func TestUpdaterListByPrefixCache(t *testing.T) {
+	imp := NewCacheUpdater[string, string](NewKVCache[string, string](), updateFn, 2)
+
+	imp.Set("test9", "test9")
+	imp.Set("test2", "test2")
+	imp.Set("test1", "test1")
+	imp.Set("test3", "test3")
+
+	_ = imp.Del("test2")
+
+	expected := []string{"test1", "test3", "test9"}
+	actual, err := imp.ListByPrefix("test")
+	if err != nil {
+		t.Errorf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, actual)
+}
