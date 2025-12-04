@@ -185,3 +185,24 @@ func TestLockerListByPrefix(t *testing.T) {
 
 	compareSlice(t, expected, actual)
 }
+
+func TestLockerListByPrefixCache(t *testing.T) {
+	imp := NewLocker(NewKVCache[string, string]())
+	tx := imp.Lock()
+	defer tx.Unlock()
+
+	tx.Set("test9", "test9")
+	tx.Set("test2", "test2")
+	tx.Set("test1", "test1")
+	tx.Set("test3", "test3")
+
+	_ = tx.Del("test2")
+
+	expected := []string{"test1", "test3", "test9"}
+	actual, err := tx.ListByPrefix("test")
+	if err != nil {
+		t.Errorf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, actual)
+}
