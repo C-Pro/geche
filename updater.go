@@ -131,7 +131,7 @@ func (u *Updater[K, V]) Len() int {
 	return u.cache.Len()
 }
 
-// ListByPrefix should only be called if underlying cache is KV.
+// ListByPrefix should only be called if underlying cache supports ListByPrefix.
 // Otherwise it will panic.
 func (u *Updater[K, V]) ListByPrefix(prefix string) ([]V, error) {
 	kv, ok := any(u.cache).(listerByPrefix[V])
