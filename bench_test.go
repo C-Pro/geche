@@ -2,13 +2,14 @@ package geche
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 )
-
-const keyCardinality = 1000000
 
 type testCase struct {
 	key string
@@ -22,15 +23,51 @@ const (
 )
 
 func genTestData(N int) []testCase {
+	// Generate composite keys with common real-life pattern.
+	// {keyType}:{userID}:{objectID}
+	// This is mostly irrelevant for map-backed caches, but makes a world of difference
+	// for trie-based KV cache.
+	var (
+		numKeyTypes = 20
+		numUsers    = N / 1000
+		// Number of distinct keys controls how much hits/misses we have in the benchmark.
+		// When number of distinct keys >= N, we have mostly misses.
+		distinctKeys = N / 10
+	)
+	keyTypesMap := make(map[string]struct{}, numKeyTypes)
+	for len(keyTypesMap) < numKeyTypes {
+		keyTypesMap[genRandomString(5)] = struct{}{}
+	}
+	keyTypes := slices.Collect(maps.Keys(keyTypesMap))
+
+	usersMap := make(map[string]struct{}, numUsers)
+	for len(usersMap) < numUsers {
+		usersMap[genRandomString(16)] = struct{}{}
+	}
+	users := slices.Collect(maps.Keys(usersMap))
+
+	keysMap := make(map[string]struct{}, distinctKeys)
+	for len(keysMap) < distinctKeys {
+		key := fmt.Sprintf("%s:%s:%s",
+			keyTypes[rand.Intn(len(keyTypes))],
+			users[rand.Intn(len(users))],
+			genRandomString(16),
+		)
+		keysMap[key] = struct{}{}
+	}
+
+	keys := slices.Collect(maps.Keys(keysMap))
+
 	d := make([]testCase, N)
 	for i := range d {
-		d[i].key = strconv.Itoa(rand.Intn(keyCardinality))
+		d[i].key = keys[rand.Intn(len(keys))]
 		r := rand.Float64()
 		switch {
-		case r < 0.9:
-			d[i].op = OPGet
-		case r >= 0.9 && r < 0.95:
+		// Write heavy, because with read heavy, most of the reads would be misses.
+		case r < 0.7:
 			d[i].op = OPSet
+		case r >= 0.7 && r < 0.95:
+			d[i].op = OPGet
 		case r >= 0.95:
 			d[i].op = OPDel
 		}
@@ -48,6 +85,18 @@ func benchmarkSet(c Geche[string, string], testData []testCase, b *testing.B) {
 func benchmarkSetIfPresent(c Geche[string, string], testKeys []string, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		c.SetIfPresent(testKeys[i%len(testKeys)], "value")
+	}
+}
+
+func benchmarkGet(c Geche[string, string], testKeys []string, b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_, _ = c.Get(testKeys[i%len(testKeys)])
+	}
+}
+
+func benchmarkDel(c Geche[string, string], testKeys []string, b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = c.Del(testKeys[i%len(testKeys)])
 	}
 }
 
@@ -81,14 +130,6 @@ func BenchmarkSet(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
-		},
-		{
 			"MapTTLCache",
 			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
@@ -98,7 +139,11 @@ func BenchmarkSet(b *testing.B) {
 		},
 		{
 			"KVMapCache",
-			NewKV[string](NewMapCache[string, string]()),
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
 		},
 	}
 
@@ -109,13 +154,6 @@ func BenchmarkSet(b *testing.B) {
 			benchmarkSet(c.imp, data, b)
 		})
 	}
-
-	b.Run("AnyCache", func(b *testing.B) {
-		c := newAnyCache()
-		for i := 0; i < b.N; i++ {
-			c.Set(data[i%len(data)].key, "value")
-		}
-	})
 }
 
 func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
@@ -129,14 +167,6 @@ func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
 		{
 			"MapCache",
 			NewMapCache[string, string](),
-		},
-		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
 		},
 		{
 			"MapTTLCache",
@@ -157,9 +187,11 @@ func BenchmarkSetIfPresentOnlyHits(b *testing.B) {
 		testKeys[i] = strconv.Itoa(i)
 	}
 
-	b.ResetTimer()
-
 	for _, c := range tab {
+		for k := 0; k < len(testKeys); k++ {
+			c.imp.Set(testKeys[k], "value")
+		}
+
 		b.Run(c.name, func(b *testing.B) {
 			benchmarkSetIfPresent(c.imp, testKeys, b)
 		})
@@ -179,12 +211,46 @@ func BenchmarkSetIfPresentOnlyMisses(b *testing.B) {
 			NewMapCache[string, string](),
 		},
 		{
-			"StringCache",
-			newStringCache(),
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		},
 		{
-			"UnsafeCache",
-			newUnsafeCache(),
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
+		},
+	}
+
+	for _, c := range tab {
+		for k := 0; k < 10_000_000; k++ {
+			c.imp.Set(strconv.Itoa(k), "value")
+		}
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				c.imp.SetIfPresent("absent", "never set")
+			}
+		})
+	}
+}
+
+func BenchmarkGetHit(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
 		},
 		{
 			"MapTTLCache",
@@ -196,16 +262,156 @@ func BenchmarkSetIfPresentOnlyMisses(b *testing.B) {
 		},
 		{
 			"KVMapCache",
-			NewKV[string](NewMapCache[string, string]()),
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
 		},
 	}
 
-	b.ResetTimer()
+	testKeys := make([]string, 10_000_000)
+	for i := 0; i < len(testKeys); i++ {
+		testKeys[i] = strconv.Itoa(i)
+	}
+
+	for _, c := range tab {
+		for k := 0; k < len(testKeys); k++ {
+			c.imp.Set(testKeys[k], "value")
+		}
+
+		b.Run(c.name, func(b *testing.B) {
+			benchmarkGet(c.imp, testKeys, b)
+		})
+	}
+}
+
+func BenchmarkGetMiss(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
+		},
+	}
+
+	for _, c := range tab {
+		for k := 0; k < 10_000_000; k++ {
+			c.imp.Set(strconv.Itoa(k), "value")
+		}
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _ = c.imp.Get("1234567890absent")
+			}
+		})
+	}
+}
+
+func BenchmarkDelHit(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
+		},
+	}
+
+	testKeys := make([]string, 10_000_000)
+	for i := 0; i < len(testKeys); i++ {
+		testKeys[i] = strconv.Itoa(i)
+	}
 
 	for _, c := range tab {
 		b.Run(c.name, func(b *testing.B) {
+			// Populate cache before each benchmark
+			for k := 0; k < len(testKeys); k++ {
+				c.imp.Set(testKeys[k], "value")
+			}
+			b.ResetTimer()
+			benchmarkDel(c.imp, testKeys, b)
+		})
+	}
+}
+
+func BenchmarkDelMiss(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tab := []struct {
+		name string
+		imp  Geche[string, string]
+	}{
+		{
+			"MapCache",
+			NewMapCache[string, string](),
+		},
+		{
+			"MapTTLCache",
+			NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
+		},
+		{
+			"RingBuffer",
+			NewRingBuffer[string, string](1000000),
+		},
+		{
+			"KVMapCache",
+			NewKV(NewMapCache[string, string]()),
+		},
+		{
+			"KVCache",
+			NewKVCache[string, string](),
+		},
+	}
+
+	for _, c := range tab {
+		for k := 0; k < 10_000_000; k++ {
+			c.imp.Set(strconv.Itoa(k), "value")
+		}
+		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				c.imp.SetIfPresent("absent", "never set")
+				_ = c.imp.Del("1234567890absent")
 			}
 		})
 	}
@@ -224,14 +430,6 @@ func BenchmarkEverything(b *testing.B) {
 		{
 			"MapCache",
 			NewMapCache[string, string](),
-		},
-		{
-			"StringCache",
-			newStringCache(),
-		},
-		{
-			"UnsafeCache",
-			newUnsafeCache(),
 		},
 		{
 			"MapTTLCache",
@@ -258,6 +456,10 @@ func BenchmarkEverything(b *testing.B) {
 			NewKV[string](NewMapCache[string, string]()),
 		},
 		{
+			"KVCache",
+			NewKVCache[string, string](),
+		},
+		{
 			"LockerMapCache",
 			NewLocker[string, string](NewMapCache[string, string]()).Lock(),
 		},
@@ -270,22 +472,6 @@ func BenchmarkEverything(b *testing.B) {
 			benchmarkFuzz(c.imp, data, b)
 		})
 	}
-
-	b.Run("AnyCache", func(b *testing.B) {
-		c := newAnyCache()
-		for i := 0; i < b.N; i++ {
-			key := strconv.Itoa(rand.Intn(keyCardinality))
-			r := rand.Float64()
-			switch {
-			case r < 0.9:
-				_, _ = c.Get(key)
-			case r >= 0.9 && r < 0.95:
-				_ = c.Del(key)
-			case r >= 0.95:
-				c.Set(key, "value")
-			}
-		}
-	})
 }
 
 func randomString(n int) string {
@@ -300,6 +486,30 @@ func randomString(n int) string {
 // This one is quite slow. Trace shows that most of the time is spent allocating output slice.
 func BenchmarkKVListByPrefix(b *testing.B) {
 	c := NewKV[string](NewMapCache[string, string]())
+	keys := make([]string, 100_000)
+	for i := 0; i < 100_000; i++ {
+		l := rand.Intn(15) + 15
+		unique := randomString(l)
+		keys[i] = unique
+		for j := 0; j < 10; j++ {
+			c.Set(unique+randomString(l), randomString(l))
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, err := c.ListByPrefix(keys[i%len(keys)])
+		if err != nil {
+			b.Errorf("unexpected error in ListByPrefix: %v", err)
+		}
+		if len(res) != 10 {
+			b.Errorf("expected len 10, but got %d", len(res))
+		}
+	}
+}
+
+func BenchmarkKVCacheListByPrefix(b *testing.B) {
+	c := NewKVCache[string, string]()
 	keys := make([]string, 100_000)
 	for i := 0; i < 100_000; i++ {
 		l := rand.Intn(15) + 15

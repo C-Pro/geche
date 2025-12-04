@@ -11,6 +11,7 @@ Implementations are as simple as possible to be predictable in max latency, memo
 * `MapCache` is a very simple map-based thread-safe cache, that is not limited from growing. Can be used when you have relatively small number of distinct keys that does not grow significantly, and you do not need the values to expire automatically. E.g. if your keys are country codes, timezones etc, this cache type is ok to use.
 * `MapTTLCache` is map-based thread-safe cache with support for TTL (values automatically expire). If you don't want to read value from cache that is older than some threshold (e.g. 1 sec), you set this TTL when initializing the cache object and obsolete rows will be removed from cache automatically.
 * `RingBuffer` is a predefined size cache that allocates all memory from the start and will not grow above it. It keeps constant size by overwriting the oldest values in the cache with new ones. Use this cache when you need speed and fixed memory footprint, and your key cardinality is predictable (or you are ok with having cache misses if cardinality suddenly grows above your cache size).
+* `KVCache` is a specialized cache designed for efficient prefix-based key lookups. It uses a trie data structure to store keys, enabling lexicographical ordering and fast retrieval of all values whose keys start with a given prefix.
 
 ## Examples
 
@@ -37,14 +38,14 @@ func main() {
         fmt.Println(err)
         return
     }
-	
+
 	// will update the value associated to key 1
 	previousVal, updated := c.SetIfPresent(1, "two")
 	// will print "one"
 	fmt.Println(previousVal)
 	// will print "true"
 	fmt.Println(updated)
-	
+
 	// will not have any effect
 	c.SetIfPresent(2, "dua")
 
@@ -110,7 +111,7 @@ if err != nil {
 fmt.Println(v)
 ```
 
-`Updater` provides `ListByPrefix` function, but it can be used only if underlying cache supports it (is a `KV` wrapper).
+`Updater` provides `ListByPrefix` function, but it can be used only if underlying cache supports it.
 Otherwize it will panic.
 
 ### Sharding
@@ -208,45 +209,59 @@ allow rollback, but it provides atomicity and isolation guarantees.
 
 ## Benchmarks
 
-Test suite contains a couple of benchmarks to compare the speed difference between old-school generic implementation using `interface{}` or `any` to hold cache values versus using generics.
-
-TL/DR: generics are faster than `interface{}` but slower than hardcoded type implementation. Ring buffer is 2x+ faster than map-based TTL cache.
-
-There are two types of benchmarks:
-* `BenchmarkSet` only times the `Set` operation that allocates all the memory, and usually is the most resource intensive.
-* `BenchmarkEverything` repeatedly does one of three operations (Get/Set/Del). The probability for each type of operation to be executed is 0.9/0.05/0.05 respectively. Each operation is executed on randomly generated key, there are totally 1 million distinct keys, so total cache size will be limited too.
-
-Another benchmark `BenchmarkKVListByPrefix` lists `KV` wrapper's `ListByPrefix` operation. It times getting all values matching particular prefix in a cache with 1 million keys. Benchmark is arranged so each call returns 10 records.
-
-Benchmarking four simple cache implementations shows that generic cache (`MapCache`) is faster than cache that uses an empty interface to store any type of values (`AnyCache`), but slower than implementations that use concrete types (`StringCache`) and skip on thread safety (`UnsafeCache`).
-Generic `MapTTLCache` is on par with `AnyCache` but it is to be expected as it does more work keeping linked list for fast invalidation. `RingBuffer` performs the best because all the space it needs is preallocated during the initialization, and actual cache size is limited.
-
-Note that `stringCache`, `unsafeCache`, `anyCache` implementations are unexported. These implementations exist only to compare Go generic implementation with other approaches.
-
-The results below are not to be treated as absolute values. Actual cache operation latency will depend on many variables such as CPU speed, key cardinality, number of concurrent operations, whether the allocation happen during the operation or underlying structure already has the allocated space and so on.
+Benchmarks are designed to compare basic operations of different cache implementations in this library.
 
 ```shell
  $ go test -bench=. -benchmem -benchtime=10s .
 goos: linux
 goarch: amd64
 pkg: github.com/c-pro/geche
-cpu: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
-BenchmarkSet/MapCache-32        41473179               284.4 ns/op             1 B/op          0 allocs/op
-BenchmarkSet/StringCache-32     64817786               182.5 ns/op             1 B/op          0 allocs/op
-BenchmarkSet/UnsafeCache-32     80224212               125.2 ns/op             1 B/op          0 allocs/op
-BenchmarkSet/MapTTLCache-32     14296934               758.3 ns/op            15 B/op          0 allocs/op
-BenchmarkSet/RingBuffer-32      64152157               244.9 ns/op             0 B/op          0 allocs/op
-BenchmarkSet/KVMapCache-32      10701508              1152 ns/op              10 B/op          0 allocs/op
-BenchmarkSet/AnyCache-32        67699846               288.9 ns/op             2 B/op          0 allocs/op
-BenchmarkEverything/MapCache-32                 100000000              106.7 ns/op             0 B/op          0 allocs/op
-BenchmarkEverything/StringCache-32              100000000              100.3 ns/op             0 B/op          0 allocs/op
-BenchmarkEverything/UnsafeCache-32              135556000               87.31 ns/op            0 B/op          0 allocs/op
-BenchmarkEverything/MapTTLCache-32              100000000              175.6 ns/op             0 B/op          0 allocs/op
-BenchmarkEverything/RingBuffer-32               121507983               94.82 ns/op            0 B/op          0 allocs/op
-BenchmarkEverything/ShardedRingBufferUpdater-32                 32976999               371.6 ns/op            18 B/op          0 allocs/op
-BenchmarkEverything/KVMapCache-32                               90192560               199.9 ns/op             1 B/op          0 allocs/op
-BenchmarkEverything/AnyCache-32                                 100000000              231.1 ns/op             8 B/op          1 allocs/op
-BenchmarkKVListByPrefix-32                                       3167788              3720 ns/op             131 B/op          3 allocs/op
+cpu: AMD Ryzen 7 PRO 8840U w/ Radeon 780M Graphics
+BenchmarkSet/MapCache-16                65541076               182.1 ns/op             0 B/op          0 allocs/op
+BenchmarkSet/MapTTLCache-16             19751806               754.7 ns/op            10 B/op          0 allocs/op
+BenchmarkSet/RingBuffer-16              51921265               365.9 ns/op             0 B/op          0 allocs/op
+BenchmarkSet/KVMapCache-16               3876873              3461 ns/op             804 B/op         11 allocs/op
+BenchmarkSet/KVCache-16                 14983084              1025 ns/op              54 B/op          1 allocs/op
+BenchmarkSetIfPresentOnlyHits/MapCache-16               79179759               187.6 ns/op             0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyHits/MapTTLCache-16            37620368               371.8 ns/op             0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyHits/RingBuffer-16             100000000              110.3 ns/op             0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyHits/KVMapCache-16             39745081               345.1 ns/op             8 B/op          1 allocs/op
+BenchmarkSetIfPresentOnlyMisses/MapCache-16             786898237               15.04 ns/op            0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyMisses/MapTTLCache-16          648632726               18.43 ns/op            0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyMisses/RingBuffer-16           746030799               15.92 ns/op            0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyMisses/KVMapCache-16           625973469               19.00 ns/op            0 B/op          0 allocs/op
+BenchmarkSetIfPresentOnlyMisses/KVCache-16              972807471               12.02 ns/op            0 B/op          0 allocs/op
+BenchmarkGetHit/MapCache-16                             100000000              104.8 ns/op             0 B/op          0 allocs/op
+BenchmarkGetHit/MapTTLCache-16                          57810127               261.9 ns/op             0 B/op          0 allocs/op
+BenchmarkGetHit/RingBuffer-16                           121727826               98.63 ns/op            0 B/op          0 allocs/op
+BenchmarkGetHit/KVMapCache-16                           100000000              106.3 ns/op             0 B/op          0 allocs/op
+BenchmarkGetHit/KVCache-16                              158599485               78.32 ns/op            0 B/op          0 allocs/op
+BenchmarkGetMiss/MapCache-16                            1000000000              11.01 ns/op            0 B/op          0 allocs/op
+BenchmarkGetMiss/MapTTLCache-16                         749231084               15.85 ns/op            0 B/op          0 allocs/op
+BenchmarkGetMiss/RingBuffer-16                          676585886               17.73 ns/op            0 B/op          0 allocs/op
+BenchmarkGetMiss/KVMapCache-16                          1000000000              11.64 ns/op            0 B/op          0 allocs/op
+BenchmarkGetMiss/KVCache-16                             297815424               39.80 ns/op            0 B/op          0 allocs/op
+BenchmarkDelHit/MapCache-16                             1000000000              10.84 ns/op            0 B/op          0 allocs/op
+BenchmarkDelHit/MapTTLCache-16                          756901813               14.37 ns/op            0 B/op          0 allocs/op
+BenchmarkDelHit/RingBuffer-16                           1000000000              10.28 ns/op            0 B/op          0 allocs/op
+BenchmarkDelHit/KVMapCache-16                           358719861               28.27 ns/op            1 B/op          0 allocs/op
+BenchmarkDelHit/KVCache-16                              366528763               31.60 ns/op           17 B/op          1 allocs/op
+BenchmarkDelMiss/MapCache-16                            792498559               15.05 ns/op            0 B/op          0 allocs/op
+BenchmarkDelMiss/MapTTLCache-16                         735312480               16.18 ns/op            0 B/op          0 allocs/op
+BenchmarkDelMiss/RingBuffer-16                          364969610               32.75 ns/op            0 B/op          0 allocs/op
+BenchmarkDelMiss/KVMapCache-16                          78108807               153.3 ns/op            64 B/op          1 allocs/op
+BenchmarkDelMiss/KVCache-16                             49184259               233.0 ns/op           352 B/op          4 allocs/op
+BenchmarkEverything/MapCache-16                         67129406               175.8 ns/op             0 B/op          0 allocs/op
+BenchmarkEverything/MapTTLCache-16                      24496364               650.0 ns/op             8 B/op          0 allocs/op
+BenchmarkEverything/RingBuffer-16                       60798320               304.7 ns/op             0 B/op          0 allocs/op
+BenchmarkEverything/ShardedRingBufferUpdater-16         44071453               427.5 ns/op            19 B/op          0 allocs/op
+BenchmarkEverything/KVMapCache-16                        5465926              2695 ns/op             745 B/op         10 allocs/op
+BenchmarkEverything/KVCache-16                          17036607              1020 ns/op              60 B/op          0 allocs/op
+BenchmarkEverything/LockerMapCache-16                   48808772               209.0 ns/op             1 B/op          0 allocs/op
+BenchmarkKVListByPrefix-16                               3052804              3905 ns/op            1008 B/op         15 allocs/op
+BenchmarkKVCacheListByPrefix-16                          8222977              1438 ns/op             580 B/op          8 allocs/op
+PASS
+ok      github.com/c-pro/geche  956.205s
 ```
 
 # Parallel benchmarks
@@ -256,53 +271,31 @@ BenchmarkKVListByPrefix-32                                       3167788        
 I implemented sharding anyway because why not. But it is a separate wrapper, so does not complicate existing codebase.
 
 ```shell
-$ go test -benchtime=10s -benchmem -bench .
+go test -benchtime=10s -benchmem -bench .
 goos: linux
 goarch: amd64
 pkg: cache_bench
-cpu: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
-BenchmarkEverythingParallel/MapCache-32                 100000000              170.1 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/MapTTLCache-32              90510988               198.9 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/RingBuffer-32               85731428               196.8 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/ShardedMapCache-32          273706551               43.51 ns/op            0 B/op          0 allocs/op
-BenchmarkEverythingParallel/ShardedMapTTLCache-32               282491904               44.37 ns/op            0 B/op          0 allocs/op
-BenchmarkEverythingParallel/ShardedRingBuffer-32                284756061               40.78 ns/op            0 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-32            43165059               294.2 ns/op             7 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-32                    186976719               64.51 ns/op            0 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/jellydator/ttlcache-32                   29943469               376.3 ns/op            43 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/erni27/imcache-32                        531496862               23.35 ns/op           50 B/op          1 allocs/op
-BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-32                   100000000              108.5 ns/op            27 B/op          1 allocs/op
-BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-32               43857675               307.1 ns/op             0 B/op          0 allocs/op
-BenchmarkEverythingParallel/github.com/egregors/kesh-32                         33866130               428.7 ns/op            83 B/op          2 allocs/op
-BenchmarkEverythingParallel/KVMapCache-32                                       43328151               401.2 ns/op           112 B/op          0 allocs/op
-```
-
-And now on 32 CPU machine we clearly see performance degradation due to lock contention. Sharded implementations are about 4 times faster.
-Notice the Imcache result. Crazy fast! 😅
-
-KV wrapper result is worse then other caches, but it is expected as it keeps key index allowing prefix search with deterministic order, that other caches do not allow. It updates trie structure on `Set` and does extra work to cleanup the key on `Del`.
-
-```shell
-$ go test -benchtime=10s -benchmem -bench .
-goos: linux
-goarch: amd64
-pkg: cache_bench
-cpu: Intel(R) Xeon(R) Platinum 8280 CPU @ 2.70GHz
-BenchmarkEverythingParallel/MapCache-32         	64085875	       248.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/MapTTLCache-32      	58598002	       279.8 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/RingBuffer-32       	48229945	       315.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/ShardedMapCache-32  	234258486	        53.16 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/ShardedMapTTLCache-32         	231177732	        53.63 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/ShardedRingBuffer-32          	236979438	        48.98 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-32         	39842918	       345.9 ns/op	       7 B/op	       0 allocs/op
-BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-32                 	150612642	        81.82 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/github.com/jellydator/ttlcache-32                	29333647	       433.9 ns/op	      43 B/op	       0 allocs/op
-BenchmarkEverythingParallel/github.com/erni27/imcache-32                     	345577933	        35.63 ns/op	      50 B/op	       1 allocs/op
-BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-32                	83293519	       142.1 ns/op	      27 B/op	       1 allocs/op
-BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-32            	35763888	       378.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEverythingParallel/github.com/egregors/kesh-32                      	25860772	       524.1 ns/op	      84 B/op	       2 allocs/op
-BenchmarkEverythingParallel/KVMapCache-32                                    	33802629	       478.4 ns/op	     109 B/op	       0 allocs/op
+cpu: AMD Ryzen 7 PRO 8840U w/ Radeon 780M Graphics
+BenchmarkEverythingParallel/MapCache-16         	100000000	       173.9 ns/op	       1 B/op	       0 allocs/op
+BenchmarkEverythingParallel/MapTTLCache-16      	65010415	       382.5 ns/op	       2 B/op	       0 allocs/op
+BenchmarkEverythingParallel/RingBuffer-16       	100000000	       225.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedMapCache-16  	198813898	        56.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedMapTTLCache-16         	122482419	        97.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedRingBuffer-16          	188570131	        63.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/Code-Hex/go-generics-cache-16         	55945956	       474.2 ns/op	      91 B/op	       2 allocs/op
+BenchmarkEverythingParallel/github.com/Yiling-J/theine-go-16                 	71100289	       172.2 ns/op	       1 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/jellydator/ttlcache-16                	58265994	       924.8 ns/op	      30 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/erni27/imcache-16                     	236973852	        45.84 ns/op	      33 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/dgraph-io/ristretto-16                	88618468	       141.9 ns/op	      94 B/op	       2 allocs/op
+BenchmarkEverythingParallel/github.com/hashicorp/golang-lru/v2-16            	78454165	       399.1 ns/op	       2 B/op	       0 allocs/op
+BenchmarkEverythingParallel/github.com/egregors/kesh-16                      	68416022	       337.8 ns/op	       7 B/op	       0 allocs/op
+BenchmarkEverythingParallel/KVMapCache-16                                    	 7607014	      2050 ns/op	     254 B/op	       3 allocs/op
+BenchmarkEverythingParallel/KVCache-16                                       	52397652	       902.8 ns/op	      53 B/op	       0 allocs/op
+BenchmarkEverythingParallel/ShardedKVCache-16                                	100000000	       150.9 ns/op	      45 B/op	       0 allocs/op
 PASS
+ok  	cache_bench	390.130s
 ```
+
+KV and KVCache results are worse then other caches, but it is expected as it keeps key index allowing prefix search with deterministic order, that other caches do not allow. It updates trie structure on `Set` and does extra work to cleanup the key on `Del`.
 
 Concurrent comparison benchmark is located in a [separate repository](https://github.com/C-Pro/cache-benchmarks) to avoid pulling unnecessary dependencies in the library.
