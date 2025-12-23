@@ -44,6 +44,10 @@ func NewRingBuffer[K comparable, V any](size int) *RingBuffer[K, V] {
 func (c *RingBuffer[K, V]) Set(key K, value V) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
+	c.set(key, value)
+}
+
+func (c *RingBuffer[K, V]) set(key K, value V) {
 	// Remove the key which value we are overwriting
 	// from the map. GC does not cleanup preallocated map,
 	// so no pressure here.
@@ -70,6 +74,19 @@ func (c *RingBuffer[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	}
 
 	return c.zeroV, false
+}
+
+func (c *RingBuffer[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	i, present := c.index[key]
+	if present {
+		return c.data[i].V, false
+	}
+
+	c.set(key, value)
+	return c.zeroV, true
 }
 
 // Get returns cached value for the key, or ErrNotFound if the key does not exist.

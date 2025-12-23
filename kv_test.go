@@ -336,6 +336,7 @@ type MockErrCache struct{}
 
 func (m *MockErrCache) Set(key string, value string)                         {}
 func (m *MockErrCache) SetIfPresent(key string, value string) (string, bool) { return "", false }
+func (m *MockErrCache) SetIfAbsent(key string, value string) (string, bool)  { return "", true }
 func (m *MockErrCache) Del(key string) error                                 { return nil }
 func (m *MockErrCache) Snapshot() map[string]string                          { return nil }
 func (m *MockErrCache) Len() int                                             { return 0 }
@@ -759,6 +760,33 @@ func TestSetIfPresent(t *testing.T) {
 	_, err = kv.Get("d")
 	if err == nil {
 		t.Errorf("expected key \"d\" to not be present in the kv")
+	}
+}
+
+func TestSetIfAbsent(t *testing.T) {
+	kv := NewKV[string](NewMapCache[string, string]())
+	kv.Set("a", "test2")
+
+	old, inserted := kv.SetIfAbsent("a", "test5")
+	if inserted {
+		t.Errorf("key \"a\" is present in kv, SetIfAbsent should return false")
+	}
+
+	if old != "test2" {
+		t.Errorf("old value is %q, SetIfAbsent should return true", old)
+	}
+
+	old, inserted = kv.SetIfAbsent("d", "test3")
+	if !inserted {
+		t.Errorf("key \"bbb\" is not present in kv, SetIfAbsent should return true")
+	}
+
+	if old != "" {
+		t.Errorf("there was no old value for \"bbb\", SetIfAbsent should have returned zero-value for old value")
+	}
+
+	if _, inserted := kv.SetIfAbsent("d", "test3"); inserted {
+		t.Errorf("key \"d\" is present in kv, SetIfPresent should return false")
 	}
 }
 

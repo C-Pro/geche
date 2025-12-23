@@ -38,6 +38,19 @@ func (c *MapCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return old, false
 }
 
+func (c *MapCache[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	old, ok := c.data[key]
+	if ok {
+		return old, false
+	}
+
+	c.data[key] = value
+	return old, true
+}
+
 // Get returns ErrNotFound if key does not exist in the cache.
 func (c *MapCache[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()

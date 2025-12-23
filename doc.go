@@ -11,6 +11,8 @@ type Geche[K comparable, V any] interface {
 	Set(K, V)
 	// SetIfPresent sets the kv only if the key was already present, and returns the previous value (if any) and whether the insertion was performed
 	SetIfPresent(K, V) (V, bool)
+	// SetIfAbsent sets the kv only if the key didn't exist yet, and returns the existing value (if any) and whether the insertion was performed
+	SetIfAbsent(K, V) (V, bool)
 	Get(K) (V, error)
 	Del(K) error
 	Snapshot() map[K]V

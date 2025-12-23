@@ -79,6 +79,10 @@ func (s *Sharded[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return s.shards[s.mapper.Map(key, s.N)].SetIfPresent(key, value)
 }
 
+func (s *Sharded[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	return s.shards[s.mapper.Map(key, s.N)].SetIfAbsent(key, value)
+}
+
 // Get value by key from the underlying sharded cache.
 func (s *Sharded[K, V]) Get(key K) (V, error) {
 	return s.shards[s.mapper.Map(key, s.N)].Get(key)
