@@ -782,7 +782,7 @@ func TestSetIfAbsent(t *testing.T) {
 	}
 
 	if old != "" {
-		t.Errorf("there was no old value for \"bbb\", SetIfAbsent should have returned zero-value for old value")
+		t.Errorf("there was no old value for \"d\", SetIfAbsent should have returned zero-value for old value")
 	}
 
 	if _, inserted := kv.SetIfAbsent("d", "test3"); inserted {
