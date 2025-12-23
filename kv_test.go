@@ -778,7 +778,7 @@ func TestSetIfAbsent(t *testing.T) {
 
 	old, inserted = kv.SetIfAbsent("d", "test3")
 	if !inserted {
-		t.Errorf("key \"bbb\" is not present in kv, SetIfAbsent should return true")
+		t.Errorf("key \"d\" is not present in kv, SetIfAbsent should return true")
 	}
 
 	if old != "" {
