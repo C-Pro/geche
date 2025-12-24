@@ -63,6 +63,19 @@ func (kv *KVCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return kv.zero, false
 }
 
+func (kv *KVCache[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	old, found := kv.get(key)
+	if found {
+		return old, false
+	}
+
+	kv.insert(key, value)
+	return kv.zero, true
+}
+
 // Get retrieves a value by key.
 func (kv *KVCache[K, V]) Get(key K) (V, error) {
 	kv.mux.RLock()

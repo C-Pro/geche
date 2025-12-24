@@ -64,6 +64,10 @@ func (u *Updater[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return u.cache.SetIfPresent(key, value)
 }
 
+func (u *Updater[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	return u.cache.SetIfAbsent(key, value)
+}
+
 // Get returns value from the cache. If the value is not in the cache,
 // it calls updateFn to get the value and update the cache first.
 // Since updateFn can return error, Get is not guaranteed to always return the value.

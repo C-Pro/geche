@@ -616,6 +616,38 @@ func TestKVCacheSetIfPresent(t *testing.T) {
 	}
 }
 
+func TestKVCacheSetIfAbsent(t *testing.T) {
+	cache := NewKVCache[string, string]()
+	cache.Set("a", "test2")
+
+	old, inserted := cache.SetIfAbsent("a", "test5")
+	if inserted {
+		t.Errorf("key \"a\" is present in cache, SetIfAbsent should return false")
+	}
+
+	if old != "test2" {
+		t.Errorf("expected %q, got %q", "test2", old)
+	}
+
+	old, inserted = cache.SetIfAbsent("b", "test6")
+	if !inserted {
+		t.Errorf("key \"b\" is absent from cache, SetIfAbsent should return true")
+	}
+
+	if old != "" {
+		t.Errorf("expected %q, got %q", "", old)
+	}
+
+	old, inserted = cache.SetIfAbsent("b", "test7")
+	if inserted {
+		t.Errorf("key \"b\" is present in cache, SetIfAbsent should return false")
+	}
+
+	if old != "test6" {
+		t.Errorf("previous value should be %q, but got %q", "test6", old)
+	}
+}
+
 func TestKVCacheSetIfPresentConcurrent(t *testing.T) {
 	cache := NewKVCache[string, string]()
 	cache.Set("a", "startA")

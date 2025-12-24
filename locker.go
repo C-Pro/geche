@@ -92,6 +92,16 @@ func (tx *Tx[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return tx.cache.SetIfPresent(key, value)
 }
 
+func (tx *Tx[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	if atomic.LoadInt32(&tx.unlocked) == 1 {
+		panic("cannot use unlocked transaction")
+	}
+	if !tx.writable {
+		panic("cannot set in read-only transaction")
+	}
+	return tx.cache.SetIfAbsent(key, value)
+}
+
 // Get value by key from the underlying sharded cache.
 func (tx *Tx[K, V]) Get(key K) (V, error) {
 	if atomic.LoadInt32(&tx.unlocked) == 1 {

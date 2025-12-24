@@ -126,6 +126,19 @@ func (kv *KV[V]) SetIfPresent(key string, value V) (V, bool) {
 	return previousVal, false
 }
 
+func (kv *KV[V]) SetIfAbsent(key string, value V) (V, bool) {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	previousVal, err := kv.data.Get(key)
+	if err == nil {
+		return previousVal, false
+	}
+
+	kv.set(key, value)
+	return previousVal, true
+}
+
 // Set key-value pair while updating the trie.
 // Panics if key is empty.
 func (kv *KV[V]) Set(key string, value V) {

@@ -90,6 +90,19 @@ func (c *MapTTLCache[K, V]) SetIfPresent(key K, value V) (V, bool) {
 	return old, false
 }
 
+func (c *MapTTLCache[K, V]) SetIfAbsent(key K, value V) (V, bool) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	old, err := c.get(key)
+	if err == nil {
+		return old, false
+	}
+
+	c.set(key, value)
+	return old, true
+}
+
 // Get returns ErrNotFound if key is not found in the cache or record is outdated.
 func (c *MapTTLCache[K, V]) Get(key K) (V, error) {
 	c.mux.RLock()
