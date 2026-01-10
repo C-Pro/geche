@@ -332,3 +332,193 @@ func TestSetIfPresentResetsTTL(t *testing.T) {
 		t.Errorf("value was not updated by SetIfPresent, expected %v, but got %v", "value2", v)
 	}
 }
+
+func TestOnEvict(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
+
+	evicted := make(map[string]string)
+	var mu sync.Mutex
+
+	c.OnEvict(func(key string, value string) {
+		mu.Lock()
+		evicted[key] = value
+		mu.Unlock()
+	})
+
+	c.Set("key1", "value1")
+	c.Set("key2", "value2")
+	c.Set("key3", "value3")
+
+	// Override now to simulate time passing
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(evicted) != 3 {
+		t.Errorf("expected 3 evictions, got %d", len(evicted))
+	}
+
+	expected := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+
+	for k, v := range expected {
+		if evicted[k] != v {
+			t.Errorf("expected evicted[%q] = %q, got %q", k, v, evicted[k])
+		}
+	}
+}
+
+func TestOnEvictNotCalledForDel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
+
+	evicted := make(map[string]string)
+	var mu sync.Mutex
+
+	c.OnEvict(func(key string, value string) {
+		mu.Lock()
+		evicted[key] = value
+		mu.Unlock()
+	})
+
+	c.Set("key1", "value1")
+	c.Set("key2", "value2")
+
+	// Delete key1 explicitly
+	if err := c.Del("key1"); err != nil {
+		t.Errorf("unexpected error in Del: %v", err)
+	}
+
+	mu.Lock()
+	if len(evicted) != 0 {
+		t.Errorf("expected no evictions from Del, got %d", len(evicted))
+	}
+	mu.Unlock()
+
+	// Override now to simulate TTL expiration
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(evicted) != 1 {
+		t.Errorf("expected 1 eviction from TTL, got %d", len(evicted))
+	}
+
+	if evicted["key2"] != "value2" {
+		t.Errorf("expected evicted[key2] = value2, got %q", evicted["key2"])
+	}
+
+	if _, ok := evicted["key1"]; ok {
+		t.Errorf("key1 should not be in evicted map as it was deleted with Del()")
+	}
+}
+
+func TestOnEvictPartialCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
+
+	evicted := make(map[string]string)
+	var mu sync.Mutex
+
+	c.OnEvict(func(key string, value string) {
+		mu.Lock()
+		evicted[key] = value
+		mu.Unlock()
+	})
+
+	// Override now to time T for first batch
+	c.mux.Lock()
+	c.now = func() time.Time { return ts }
+	c.mux.Unlock()
+
+	// Add first batch at time T
+	c.Set("key1", "value1")
+	c.Set("key2", "value2")
+
+	// Override now to time T+700ms for second batch
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(700 * time.Millisecond) }
+	c.mux.Unlock()
+
+	// Add second batch at time T+700ms
+	c.Set("key3", "value3")
+	c.Set("key4", "value4")
+
+	// Override now to T+1.5s - first batch expires but second doesn't
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(1500 * time.Millisecond) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup - should evict first batch only
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
+
+	mu.Lock()
+	if len(evicted) != 2 {
+		t.Errorf("expected 2 evictions, got %d", len(evicted))
+	}
+
+	if evicted["key1"] != "value1" {
+		t.Errorf("expected evicted[key1] = value1, got %q", evicted["key1"])
+	}
+
+	if evicted["key2"] != "value2" {
+		t.Errorf("expected evicted[key2] = value2, got %q", evicted["key2"])
+	}
+
+	if _, ok := evicted["key3"]; ok {
+		t.Errorf("key3 should not be evicted yet")
+	}
+
+	if _, ok := evicted["key4"]; ok {
+		t.Errorf("key4 should not be evicted yet")
+	}
+	mu.Unlock()
+
+	// Override now to T+2s - second batch now expires
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup - should evict second batch
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(evicted) != 4 {
+		t.Errorf("expected 4 evictions total, got %d", len(evicted))
+	}
+}

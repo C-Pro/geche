@@ -23,16 +23,20 @@ func zero[T any]() T {
 	return z
 }
 
+type onEvictFunc[K comparable, V any] func(key K, value V)
+
 // MapTTLCache is the thread-safe map-based cache with TTL cache invalidation support.
 // MapTTLCache uses double linked list to maintain FIFO order of inserted values.
 type MapTTLCache[K comparable, V any] struct {
-	data map[K]ttlRec[K, V]
-	mux  sync.RWMutex
-	ttl  time.Duration
-	now  func() time.Time
-	tail K
-	head K
-	zero K
+	data    map[K]ttlRec[K, V]
+	mux     sync.RWMutex
+	ttl     time.Duration
+	// TODO: replace with sync.Test
+	now     func() time.Time
+	onEvict onEvictFunc[K, V]
+	tail    K
+	head    K
+	zero    K
 }
 
 // NewMapTTLCache creates MapTTLCache instance and spawns background
@@ -68,6 +72,15 @@ func NewMapTTLCache[K comparable, V any](
 	}(ctx)
 
 	return &c
+}
+
+// OnEvict sets a callback function that will be called when an entry is evicted from the cache
+// due to TTL expiration. The callback receives the key and value of the evicted entry.
+// Note that the eviction callback is not called for Del operation.
+func (c *MapTTLCache[K, V]) OnEvict(f onEvictFunc[K, V]) {
+	c.mux.Lock()
+	c.onEvict = f
+	c.mux.Unlock()
 }
 
 func (c *MapTTLCache[K, V]) Set(key K, value V) {
@@ -145,10 +158,22 @@ func (c *MapTTLCache[K, V]) Del(key K) error {
 	return nil
 }
 
-// cleanup removes outdated records.
+// cleanup removes outdated records
+// and calls eviction callbacks.
 func (c *MapTTLCache[K, V]) cleanup() error {
+	var (
+		evicted map[K]V
+		onEvict onEvictFunc[K, V]
+	)
+
 	c.mux.Lock()
-	defer c.mux.Unlock()
+
+	// Preallocate a small map for evicted records
+	// if eviction callback is set.
+	if c.onEvict != nil {
+		onEvict = c.onEvict
+		evicted = make(map[K]V, 16)
+	}
 
 	key := c.head
 	for {
@@ -164,9 +189,13 @@ func (c *MapTTLCache[K, V]) cleanup() error {
 		c.head = rec.next
 		delete(c.data, key)
 
+		if onEvict != nil {
+			evicted[key] = rec.value
+		}
+
 		if key == c.tail {
 			c.tail = c.zero
-			return nil
+			break
 		}
 
 		next, ok := c.data[rec.next]
@@ -175,6 +204,12 @@ func (c *MapTTLCache[K, V]) cleanup() error {
 			c.data[rec.next] = next
 		}
 		key = rec.next
+	}
+	c.mux.Unlock()
+
+	// Call eviction callbacks outside of the lock.
+	for k, v := range evicted {
+		onEvict(k, v)
 	}
 
 	return nil
