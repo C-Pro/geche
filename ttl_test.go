@@ -337,7 +337,8 @@ func TestOnEvict(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Millisecond, time.Millisecond*5)
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
 
 	evicted := make(map[string]string)
 	var mu sync.Mutex
@@ -352,8 +353,15 @@ func TestOnEvict(t *testing.T) {
 	c.Set("key2", "value2")
 	c.Set("key3", "value3")
 
-	// Wait for cleanup to run
-	time.Sleep(time.Millisecond * 10)
+	// Override now to simulate time passing
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -379,7 +387,8 @@ func TestOnEvictNotCalledForDel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Second, time.Second)
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
 
 	evicted := make(map[string]string)
 	var mu sync.Mutex
@@ -404,8 +413,15 @@ func TestOnEvictNotCalledForDel(t *testing.T) {
 	}
 	mu.Unlock()
 
-	// Wait for TTL expiration and cleanup
-	time.Sleep(time.Millisecond * 1500)
+	// Override now to simulate TTL expiration
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -427,7 +443,8 @@ func TestOnEvictPartialCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	c := NewMapTTLCache[string, string](ctx, time.Millisecond*50, time.Millisecond*10)
+	c := NewMapTTLCache[string, string](ctx, time.Second, time.Hour)
+	ts := time.Now()
 
 	evicted := make(map[string]string)
 	var mu sync.Mutex
@@ -438,19 +455,33 @@ func TestOnEvictPartialCleanup(t *testing.T) {
 		mu.Unlock()
 	})
 
-	// Add first batch
+	// Override now to time T for first batch
+	c.mux.Lock()
+	c.now = func() time.Time { return ts }
+	c.mux.Unlock()
+
+	// Add first batch at time T
 	c.Set("key1", "value1")
 	c.Set("key2", "value2")
 
-	// Wait a bit
-	time.Sleep(time.Millisecond * 30)
+	// Override now to time T+700ms for second batch
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(700 * time.Millisecond) }
+	c.mux.Unlock()
 
-	// Add second batch
+	// Add second batch at time T+700ms
 	c.Set("key3", "value3")
 	c.Set("key4", "value4")
 
-	// Wait for first batch to expire and cleanup to run
-	time.Sleep(time.Millisecond * 40)
+	// Override now to T+1.5s - first batch expires but second doesn't
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(1500 * time.Millisecond) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup - should evict first batch only
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
 
 	mu.Lock()
 	if len(evicted) != 2 {
@@ -474,8 +505,15 @@ func TestOnEvictPartialCleanup(t *testing.T) {
 	}
 	mu.Unlock()
 
-	// Wait for second batch to expire
-	time.Sleep(time.Millisecond * 40)
+	// Override now to T+2s - second batch now expires
+	c.mux.Lock()
+	c.now = func() time.Time { return ts.Add(2 * time.Second) }
+	c.mux.Unlock()
+
+	// Manually trigger cleanup - should evict second batch
+	if err := c.cleanup(); err != nil {
+		t.Errorf("unexpected error in cleanup: %v", err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()

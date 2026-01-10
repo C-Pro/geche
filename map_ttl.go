@@ -31,6 +31,7 @@ type MapTTLCache[K comparable, V any] struct {
 	data    map[K]ttlRec[K, V]
 	mux     sync.RWMutex
 	ttl     time.Duration
+	// TODO: replace with sync.Test
 	now     func() time.Time
 	onEvict onEvictFunc[K, V]
 	tail    K
