@@ -135,6 +135,14 @@ func (u *Updater[K, V]) Len() int {
 	return u.cache.Len()
 }
 
+// Clear removes all elements from the cache.
+func (u *Updater[K, V]) Clear() {
+	u.mux.Lock()
+	defer u.mux.Unlock()
+
+	u.cache.Clear()
+}
+
 // ListByPrefix should only be called if underlying cache supports ListByPrefix.
 // Otherwise it will panic.
 func (u *Updater[K, V]) ListByPrefix(prefix string) ([]V, error) {

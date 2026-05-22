@@ -123,3 +123,10 @@ func (s *Sharded[K, V]) Len() int {
 
 	return l
 }
+
+// Clear removes all elements from all underlying shards.
+func (s *Sharded[K, V]) Clear() {
+	for _, shard := range s.shards {
+		shard.Clear()
+	}
+}

@@ -17,4 +17,6 @@ type Geche[K comparable, V any] interface {
 	Del(K) error
 	Snapshot() map[K]V
 	Len() int
+	// Clear removes all elements from the cache.
+	Clear()
 }

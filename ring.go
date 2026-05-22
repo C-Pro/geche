@@ -141,6 +141,18 @@ func (c *RingBuffer[K, V]) Len() int {
 	return len(c.index)
 }
 
+// Clear removes all items from the cache.
+func (c *RingBuffer[K, V]) Clear() {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	for i := range c.data {
+		c.data[i] = BufferRec[K, V]{empty: true}
+	}
+	clear(c.index)
+	c.head = 0
+}
+
 // ListAll returns all key-value pairs in the cache in the order they were added.
 func (c *RingBuffer[K, V]) ListAll() []BufferRec[K, V] {
 	c.mux.RLock()

@@ -330,6 +330,17 @@ func (kv *KV[V]) Len() int {
 	return kv.data.Len()
 }
 
+// Clear removes all elements from the cache and resets the trie.
+func (kv *KV[V]) Clear() {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	kv.data.Clear()
+	kv.trie = &trieNode{
+		down: make(map[byte]*trieNode),
+	}
+}
+
 func (kv *KV[V]) set(key string, value V) {
 	kv.data.Set(key, value)
 

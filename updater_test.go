@@ -27,7 +27,7 @@ func ExampleNewCacheUpdater() {
 
 	// Create a cache updater with updaterFunction
 	// that sets cache value equal to the key.
-	u := NewCacheUpdater[string, string](
+	u := NewCacheUpdater(
 		NewMapTTLCache[string, string](ctx, time.Minute, time.Minute),
 		updateFn,
 		2,
@@ -42,7 +42,7 @@ func ExampleNewCacheUpdater() {
 }
 
 func TestUpdaterScenario(t *testing.T) {
-	u := NewCacheUpdater[string, string](
+	u := NewCacheUpdater(
 		NewMapCache[string, string](),
 		updateFn,
 		2,
@@ -105,7 +105,7 @@ func TestUpdaterScenario(t *testing.T) {
 }
 
 func TestUpdaterSetIfPresent(t *testing.T) {
-	u := NewCacheUpdater[string, string](
+	u := NewCacheUpdater(
 		NewMapCache[string, string](),
 		updateFn,
 		2,
@@ -145,8 +145,81 @@ func TestUpdaterSetIfPresent(t *testing.T) {
 	}
 }
 
+func TestUpdaterSetIfAbsent(t *testing.T) {
+	u := NewCacheUpdater(
+		NewMapCache[string, string](),
+		updateFn,
+		2,
+	)
+
+	if u.Len() != 0 {
+		t.Errorf("expected length to be 0, but got %d", u.Len())
+	}
+
+	s, inserted := u.SetIfAbsent("test", "test")
+	if !inserted {
+		t.Error("expected to insert the value")
+	}
+
+	if s != "" {
+		t.Errorf("expected to get empty string, but got %q", s)
+	}
+
+	s, inserted = u.SetIfAbsent("test", "test2")
+	if inserted {
+		t.Error("expected to not insert the value")
+	}
+
+	if s != "test" {
+		t.Errorf("expected to get %q, but got %q", "test", s)
+	}
+
+	v, err := u.Get("test")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+
+	if v != "test" {
+		t.Errorf("expected to get %q, but got %q", "test", v)
+	}
+}
+
+func TestUpdaterClear(t *testing.T) {
+	u := NewCacheUpdater(
+		NewMapCache[string, string](),
+		updateFn,
+		2,
+	)
+
+	u.Set("test1", "test1")
+	u.Set("test2", "test2")
+
+	if u.Len() != 2 {
+		t.Errorf("expected length to be 2, but got %d", u.Len())
+	}
+
+	u.Clear()
+
+	if u.Len() != 0 {
+		t.Errorf("expected length to be 0, but got %d", u.Len())
+	}
+
+	v, err := u.Get("test1")
+	if err != nil {
+		t.Error("expected ErrNotFound")
+	}
+
+	if v != "test1" {
+		t.Errorf("expected to get %q, but got %q", "test1", v)
+	}
+
+	if u.Len() != 1 {
+		t.Errorf("expected length to be 1, but got %d", u.Len())
+	}
+}
+
 func TestUpdaterErr(t *testing.T) {
-	u := NewCacheUpdater[string, string](
+	u := NewCacheUpdater(
 		NewMapCache[string, string](),
 		updateErrFn,
 		2,
@@ -196,7 +269,7 @@ func TestUpdaterConcurrent(t *testing.T) {
 
 	poolSize := 4
 
-	u := NewCacheUpdater[string, string](
+	u := NewCacheUpdater(
 		NewMapCache[string, string](),
 		updateFn,
 		poolSize,
@@ -259,7 +332,7 @@ func TestUpdaterConcurrent(t *testing.T) {
 }
 
 func TestUpdaterListByPrefix(t *testing.T) {
-	imp := NewCacheUpdater[string, string](NewKV[string](NewMapCache[string, string]()), updateFn, 2)
+	imp := NewCacheUpdater(NewKV[string](NewMapCache[string, string]()), updateFn, 2)
 
 	imp.Set("test9", "test9")
 	imp.Set("test2", "test2")
@@ -278,7 +351,7 @@ func TestUpdaterListByPrefix(t *testing.T) {
 }
 
 func TestUpdaterListByPrefixUnsupported(t *testing.T) {
-	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), updateFn, 2)
+	imp := NewCacheUpdater(NewMapCache[string, string](), updateFn, 2)
 
 	if !panics(func() { _, _ = imp.ListByPrefix("test") }) {
 		t.Error("ListByPrefix expected to panic if underlying cache does not provide ListByPrefix")
@@ -286,7 +359,7 @@ func TestUpdaterListByPrefixUnsupported(t *testing.T) {
 }
 
 func TestHighInflightContention(t *testing.T) {
-	imp := NewCacheUpdater[string, string](NewMapCache[string, string](), func(key string) (string, error) {
+	imp := NewCacheUpdater(NewMapCache[string, string](), func(key string) (string, error) {
 		if rand.Float64() < 0.1 {
 			return "value", nil
 		}
@@ -317,7 +390,7 @@ func TestHighInflightContention(t *testing.T) {
 }
 
 func TestUpdaterListByPrefixCache(t *testing.T) {
-	imp := NewCacheUpdater[string, string](NewKVCache[string, string](), updateFn, 2)
+	imp := NewCacheUpdater(NewKVCache[string, string](), updateFn, 2)
 
 	imp.Set("test9", "test9")
 	imp.Set("test2", "test2")

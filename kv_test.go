@@ -340,6 +340,7 @@ func (m *MockErrCache) SetIfAbsent(key string, value string) (string, bool)  { r
 func (m *MockErrCache) Del(key string) error                                 { return nil }
 func (m *MockErrCache) Snapshot() map[string]string                          { return nil }
 func (m *MockErrCache) Len() int                                             { return 0 }
+func (m *MockErrCache) Clear()                                               {}
 func (m *MockErrCache) Get(key string) (string, error) {
 	if key == "err" {
 		return "", errors.New("wow an error")
@@ -936,6 +937,9 @@ func FuzzMonkey(f *testing.F) {
 				// Since keys are random we expect a lot of Del to fail.
 				_ = kv.Del(cmd.key)
 				delete(golden, cmd.key)
+			case "Clear":
+				kv.Clear()
+				clear(golden)
 			}
 		}
 
@@ -987,9 +991,13 @@ func randTask(seed int64) []command {
 	r := rand.New(rand.NewSource(seed))
 
 	for i := 0; i < len(task); i++ {
-		task[i].action = "Set"
-		if r.Float64() < 0.1 {
+		p := r.Float64()
+		if p < 0.02 {
+			task[i].action = "Clear"
+		} else if p < 0.12 {
 			task[i].action = "Del"
+		} else {
+			task[i].action = "Set"
 		}
 		task[i].key = genRandomString(
 			r.Intn(taskMaxKeyLen-taskMinKeyLen) +

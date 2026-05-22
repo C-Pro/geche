@@ -15,7 +15,7 @@ Implementations are as simple as possible to be predictable in max latency, memo
 
 ## Examples
 
-Interface is quite simple with six methods: `Set`, `Get`, `Del`, `SetIfPresent`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
+Interface is quite simple with eight methods: `Set`, `Get`, `Del`, `SetIfPresent`, `SetIfAbsent`, `Clear`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
 
 ```go
 package main
@@ -66,6 +66,11 @@ Please be aware that it is a shallow copy, so if your cache value type contains 
 
     fmt.Println(c.Snapshot())
 ```
+
+## Clear
+
+All cache implementations and wrappers provide `Clear` function that removes all values from the cache.
+Please notice that `Clear` does not free the memory allocated by the container itself to reduce allocations if you intend to reuse the cache after clearing. If you want to free the memory, you can just create a new cache object and discard the old one.
 
 ## Wrappers
 

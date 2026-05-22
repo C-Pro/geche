@@ -328,6 +328,17 @@ func TestKVCacheNonexist(t *testing.T) {
 		t.Errorf("unexpected len %d", len(got))
 	}
 
+	// Test partial match for prefix node where search has more characters but child does not match.
+	// This covers common < len(searchKey) && common < len(child.b) in ListByPrefix.
+	got, err = cache.ListByPrefix("tex")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	if len(got) > 0 {
+		t.Errorf("unexpected len %d", len(got))
+	}
+
 	if err := cache.Del("nonexistent"); err != nil {
 		t.Errorf("unexpected error in Del: %v", err)
 	}
@@ -794,6 +805,9 @@ func FuzzKVCacheMonkey(f *testing.F) {
 				// Since keys are random we expect a lot of Del to fail.
 				_ = cache.Del(cmd.key)
 				delete(golden, cmd.key)
+			case "Clear":
+				cache.Clear()
+				clear(golden)
 			}
 		}
 
@@ -1729,6 +1743,9 @@ func FuzzKVCacheMonkey_AllByPrefix(f *testing.F) {
 				// Since keys are random we expect a lot of Del to fail.
 				_ = cache.Del(cmd.key)
 				delete(golden, cmd.key)
+			case "Clear":
+				cache.Clear()
+				clear(golden)
 			}
 		}
 

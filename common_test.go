@@ -216,6 +216,43 @@ func testDelOdd(t *testing.T, imp Geche[string, string]) {
 	}
 }
 
+func testClear(t *testing.T, imp Geche[string, string]) {
+	imp.Set("key1", "value1")
+	imp.Set("key2", "value2")
+	if imp.Len() != 2 {
+		t.Errorf("expected length 2, got %d", imp.Len())
+	}
+
+	imp.Clear()
+
+	if imp.Len() != 0 {
+		t.Errorf("expected length 0 after Clear, got %d", imp.Len())
+	}
+
+	_, err := imp.Get("key1")
+	if err != ErrNotFound {
+		t.Errorf("expected key1 to be deleted after Clear, got error: %v", err)
+	}
+
+	_, err = imp.Get("key2")
+	if err != ErrNotFound {
+		t.Errorf("expected key2 to be deleted after Clear, got error: %v", err)
+	}
+
+	// Verify we can set and get values after clear.
+	imp.Set("key3", "value3")
+	if imp.Len() != 1 {
+		t.Errorf("expected length 1 after post-clear Set, got %d", imp.Len())
+	}
+	val, err := imp.Get("key3")
+	if err != nil {
+		t.Errorf("unexpected error in Get after post-clear Set: %v", err)
+	}
+	if val != "value3" {
+		t.Errorf("expected value3, got %q", val)
+	}
+}
+
 // TestCommon runs a common set of tests on all implementations of Geche interface.
 func TestCommon(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -259,6 +296,19 @@ func TestCommon(t *testing.T) {
 				)
 			},
 		},
+		{"KVCache", func() Geche[string, string] { return NewKVCache[string, string]() }},
+		{"LockerKVCache", func() Geche[string, string] {
+			return NewLocker[string, string](NewKVCache[string, string]()).Lock()
+		}},
+		{
+			"ShardedKVCache", func() Geche[string, string] {
+				return NewSharded[string](
+					func() Geche[string, string] { return NewKVCache[string, string]() },
+					0,
+					&StringMapper{},
+				)
+			},
+		},
 	}
 
 	tab := []struct {
@@ -274,6 +324,7 @@ func TestCommon(t *testing.T) {
 		{"SetIfPresentGet", testSetIfPresentThenGet},
 		{"SetSetIfAbsentGet", testSetThenSetIfAbsentThenGet},
 		{"SetIfAbsentGet", testSetIfAbsentThenGet},
+		{"Clear", testClear},
 	}
 	for _, ci := range caches {
 		for _, tc := range tab {

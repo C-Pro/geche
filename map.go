@@ -95,3 +95,11 @@ func (c *MapCache[K, V]) Len() int {
 
 	return len(c.data)
 }
+
+// Clear removes all items from the cache.
+func (c *MapCache[K, V]) Clear() {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	clear(c.data)
+}
