@@ -117,7 +117,12 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 		// and we don't modify the slice.
 		child := &node.children[idx]
 
-		common := commonPrefixLenStr(child.b, searchKey)
+		var common int
+		if len(child.b) == 1 {
+			common = 1
+		} else {
+			common = commonPrefixLenStr(child.b, searchKey)
+		}
 
 		if common < len(searchKey) {
 			if common < len(child.b) {
@@ -284,10 +289,14 @@ func (kv *KVCache[K, V]) get(key K) (V, bool) {
 			}
 
 			child := &node.children[idx]
-			common := commonPrefixLenStr(child.b, keyStr)
-
-			if common != len(child.b) {
-				return kv.zero, false
+			var common int
+			if len(child.b) == 1 {
+				common = 1
+			} else {
+				common = commonPrefixLenStr(child.b, keyStr)
+				if common != len(child.b) {
+					return kv.zero, false
+				}
 			}
 
 			keyStr = keyStr[common:]
@@ -302,10 +311,14 @@ func (kv *KVCache[K, V]) get(key K) (V, bool) {
 			}
 
 			child := &node.children[idx]
-			common := commonPrefixLen(child.b, keyBytes)
-
-			if common != len(child.b) {
-				return kv.zero, false
+			var common int
+			if len(child.b) == 1 {
+				common = 1
+			} else {
+				common = commonPrefixLen(child.b, keyBytes)
+				if common != len(child.b) {
+					return kv.zero, false
+				}
 			}
 
 			keyBytes = keyBytes[common:]
@@ -362,7 +375,12 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			}
 
 			child := &node.children[idx]
-			common := commonPrefixLenStr(child.b, keyStr)
+			var common int
+			if len(child.b) == 1 {
+				common = 1
+			} else {
+				common = commonPrefixLenStr(child.b, keyStr)
+			}
 
 			// We found exact match of the child node's segment.
 			if common == len(child.b) {
@@ -441,7 +459,12 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			}
 
 			child := &node.children[idx]
-			common := commonPrefixLen(child.b, keyBytes)
+			var common int
+			if len(child.b) == 1 {
+				common = 1
+			} else {
+				common = commonPrefixLen(child.b, keyBytes)
+			}
 
 			// We found exact match of the child node's segment.
 			if common == len(child.b) {
@@ -548,10 +571,14 @@ func (kv *KVCache[K, V]) delete(key string) error {
 		}
 
 		child := &node.children[idx]
-		common := commonPrefixLenStr(child.b, keyPart)
-
-		if common != len(child.b) {
-			return nil
+		var common int
+		if len(child.b) == 1 {
+			common = 1
+		} else {
+			common = commonPrefixLenStr(child.b, keyPart)
+			if common != len(child.b) {
+				return nil
+			}
 		}
 
 		path = append(path, pathEntry{
