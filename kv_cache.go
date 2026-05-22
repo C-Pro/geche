@@ -392,21 +392,23 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			}
 
 			child.b = child.b[:common]
-			child.children = nil
 			child.terminal = false
-
-			child.addChild(restNode)
 
 			if len(newSuffix) == 0 {
 				child.terminal = true
 				child.valueIndex = kv.addValue(value)
+				child.children = []trieCacheNode{restNode}
 			} else {
 				newNode := trieCacheNode{
 					b:          []byte(newSuffix),
 					terminal:   true,
 					valueIndex: kv.addValue(value),
 				}
-				child.addChild(newNode)
+				if origSuffix[0] < newSuffix[0] {
+					child.children = []trieCacheNode{restNode, newNode}
+				} else {
+					child.children = []trieCacheNode{newNode, restNode}
+				}
 			}
 			return
 		}
@@ -469,14 +471,12 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			}
 
 			child.b = child.b[:common]
-			child.children = nil
 			child.terminal = false
-
-			child.addChild(restNode)
 
 			if len(newSuffix) == 0 {
 				child.terminal = true
 				child.valueIndex = kv.addValue(value)
+				child.children = []trieCacheNode{restNode}
 			} else {
 				bCopy := make([]byte, len(newSuffix))
 				copy(bCopy, newSuffix)
@@ -485,7 +485,11 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 					terminal:   true,
 					valueIndex: kv.addValue(value),
 				}
-				child.addChild(newNode)
+				if origSuffix[0] < newSuffix[0] {
+					child.children = []trieCacheNode{restNode, newNode}
+				} else {
+					child.children = []trieCacheNode{newNode, restNode}
+				}
 			}
 			return
 		}
