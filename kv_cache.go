@@ -12,11 +12,11 @@ type byteSlice interface {
 // trieCacheNode is a compact node for the radix tree.
 // It uses a sorted slice of values (not pointers) for children.
 // This reduces the number of objects on the heap significantly, reducing GC pressure.
-type trieCacheNode struct {
+type trieCacheNode[K byteSlice] struct {
 	// b is the path segment this node represents.
-	b []byte
+	b K
 	// children is a list of child nodes, sorted by the first byte of their 'b' segment.
-	children []trieCacheNode
+	children []trieCacheNode[K]
 	// index of the value in the values slice of the KVCache.
 	// Only valid if terminal is true.
 	valueIndex int
@@ -31,7 +31,7 @@ type trieCacheNode struct {
 type KVCache[K byteSlice, V any] struct {
 	values   []V
 	freelist []int
-	trie     *trieCacheNode
+	trie     *trieCacheNode[K]
 	mux      sync.RWMutex
 	zero     V
 }
@@ -39,7 +39,7 @@ type KVCache[K byteSlice, V any] struct {
 // NewKVCache creates a new KVCache.
 func NewKVCache[K byteSlice, V any]() *KVCache[K, V] {
 	return &KVCache[K, V]{
-		trie: &trieCacheNode{},
+		trie: &trieCacheNode[K]{},
 	}
 }
 
@@ -96,7 +96,7 @@ func (kv *KVCache[K, V]) Del(key string) error {
 	kv.mux.Lock()
 	defer kv.mux.Unlock()
 
-	_ = kv.delete(key)
+	_ = kv.delete(stringToKey[K](key))
 
 	return nil
 }
@@ -107,7 +107,7 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 	defer kv.mux.RUnlock()
 
 	node := kv.trie
-	searchKey := prefix
+	searchKey := stringToKey[K](prefix)
 
 	for len(searchKey) > 0 {
 		idx, found := node.findChild(searchKey[0])
@@ -115,11 +115,8 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 			return nil, nil
 		}
 
-		// Taking the address of the child is safe here because we hold RLock
-		// and we don't modify the slice.
 		child := &node.children[idx]
-
-		common := commonPrefixLenStr(child.b, searchKey)
+		common := commonPrefixLenK(child.b, searchKey)
 
 		if common < len(searchKey) {
 			if common < len(child.b) {
@@ -151,7 +148,7 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 		var path []byte
 
 		if len(prefix) > 0 {
-			searchKey := []byte(prefix)
+			searchKey := stringToKey[K](prefix)
 			var pathPrefix []byte
 			for len(searchKey) > 0 {
 				idx, found := node.findChild(searchKey[0])
@@ -160,7 +157,7 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 				}
 
 				child := &node.children[idx]
-				common := commonPrefixLen(child.b, searchKey)
+				common := commonPrefixLenK(child.b, searchKey)
 
 				if common < len(searchKey) {
 					if common < len(child.b) {
@@ -168,13 +165,13 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 						return
 					}
 					// e.g., search "abc", child has "ab". Continue search in child.
-					pathPrefix = append(pathPrefix, child.b...)
+					pathPrefix = append(pathPrefix, keyToString(child.b)...)
 					searchKey = searchKey[common:]
 					node = child
 				} else { // common == len(searchKey)
 					// Matched prefix. The node for the next part of the key is `child`.
 					// The full path to `child` is `pathPrefix` + `child.b`.
-					path = append(pathPrefix, child.b...)
+					path = append(pathPrefix, keyToString(child.b)...)
 					node = child
 					break
 				}
@@ -189,7 +186,7 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 		}
 
 		type stackEntry struct {
-			node       *trieCacheNode
+			node       *trieCacheNode[K]
 			pathLength int
 		}
 
@@ -208,7 +205,7 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 			stack = stack[:len(stack)-1]
 
 			path = path[:top.pathLength]
-			path = append(path, top.node.b...)
+			path = append(path, keyToString(top.node.b)...)
 
 			if top.node.terminal {
 				if !yield(string(path), kv.values[top.node.valueIndex]) {
@@ -276,43 +273,22 @@ func (kv *KVCache[K, V]) Clear() {
 func (kv *KVCache[K, V]) get(key K) (V, bool) {
 	node := kv.trie
 
-	switch k := any(key).(type) {
-	case string:
-		keyStr := k
-		for len(keyStr) > 0 {
-			idx, found := node.findChild(keyStr[0])
-			if !found {
-				return kv.zero, false
-			}
-
-			child := &node.children[idx]
-			common := commonPrefixLenStr(child.b, keyStr)
-
-			if common != len(child.b) {
-				return kv.zero, false
-			}
-
-			keyStr = keyStr[common:]
-			node = child
+	searchKey := key
+	for len(searchKey) > 0 {
+		idx, found := node.findChild(searchKey[0])
+		if !found {
+			return kv.zero, false
 		}
-	case []byte:
-		keyBytes := k
-		for len(keyBytes) > 0 {
-			idx, found := node.findChild(keyBytes[0])
-			if !found {
-				return kv.zero, false
-			}
 
-			child := &node.children[idx]
-			common := commonPrefixLen(child.b, keyBytes)
+		child := &node.children[idx]
+		common := commonPrefixLenK(child.b, searchKey)
 
-			if common != len(child.b) {
-				return kv.zero, false
-			}
-
-			keyBytes = keyBytes[common:]
-			node = child
+		if common != len(child.b) {
+			return kv.zero, false
 		}
+
+		searchKey = searchKey[common:]
+		node = child
 	}
 
 	if node.terminal {
@@ -337,170 +313,83 @@ func (kv *KVCache[K, V]) addValue(value V) int {
 func (kv *KVCache[K, V]) insert(key K, value V) {
 	node := kv.trie
 
-	switch k := any(key).(type) {
-	case string:
-		keyStr := k
-		if len(keyStr) == 0 {
-			if !node.terminal {
-				node.valueIndex = kv.addValue(value)
-				node.terminal = true
-			} else {
-				kv.values[node.valueIndex] = value
+	searchKey := key
+	if len(searchKey) == 0 {
+		if !node.terminal {
+			node.valueIndex = kv.addValue(value)
+			node.terminal = true
+		} else {
+			kv.values[node.valueIndex] = value
+		}
+		return
+	}
+
+	for len(searchKey) > 0 {
+		idx, found := node.findChild(searchKey[0])
+
+		if !found {
+			newNode := trieCacheNode[K]{
+				b0:         searchKey[0],
+				b:          cloneKey(searchKey),
+				terminal:   true,
+				valueIndex: kv.addValue(value),
 			}
+			node.addChildAt(newNode, idx)
 			return
 		}
 
-		for len(keyStr) > 0 {
-			idx, found := node.findChild(keyStr[0])
+		child := &node.children[idx]
+		common := commonPrefixLenK(child.b, searchKey)
 
-			if !found {
-				newNode := trieCacheNode{
-					b0:         keyStr[0],
-					b:          []byte(keyStr),
-					terminal:   true,
-					valueIndex: kv.addValue(value),
+		// We found exact match of the child node's segment.
+		if common == len(child.b) {
+			searchKey = searchKey[common:]
+			node = child
+			if len(searchKey) == 0 {
+				if !node.terminal {
+					node.valueIndex = kv.addValue(value)
+					node.terminal = true
+				} else {
+					kv.values[node.valueIndex] = value
 				}
-				node.addChildAt(newNode, idx)
 				return
 			}
-
-			child := &node.children[idx]
-			common := commonPrefixLenStr(child.b, keyStr)
-
-			// We found exact match of the child node's segment.
-			if common == len(child.b) {
-				keyStr = keyStr[common:]
-				node = child
-				if len(keyStr) == 0 {
-					if !node.terminal {
-						node.valueIndex = kv.addValue(value)
-						node.terminal = true
-					} else {
-						kv.values[node.valueIndex] = value
-					}
-					return
-				}
-				continue
-			}
-
-			// Split required.
-			origSuffix := child.b[common:]
-			newSuffix := keyStr[common:]
-
-			restNode := trieCacheNode{
-				b0:         origSuffix[0],
-				b:          origSuffix,
-				children:   child.children,
-				terminal:   child.terminal,
-				valueIndex: child.valueIndex,
-			}
-
-			child.b = child.b[:common]
-			child.terminal = false
-
-			if len(newSuffix) == 0 {
-				child.terminal = true
-				child.valueIndex = kv.addValue(value)
-				child.children = []trieCacheNode{restNode}
-			} else {
-				newNode := trieCacheNode{
-					b0:         newSuffix[0],
-					b:          []byte(newSuffix),
-					terminal:   true,
-					valueIndex: kv.addValue(value),
-				}
-				if origSuffix[0] < newSuffix[0] {
-					child.children = []trieCacheNode{restNode, newNode}
-				} else {
-					child.children = []trieCacheNode{newNode, restNode}
-				}
-			}
-			return
+			continue
 		}
 
-	case []byte:
-		keyBytes := k
-		if len(keyBytes) == 0 {
-			if !node.terminal {
-				node.valueIndex = kv.addValue(value)
-				node.terminal = true
-			} else {
-				kv.values[node.valueIndex] = value
-			}
-			return
+		// Split required.
+		origSuffix := child.b[common:]
+		newSuffix := searchKey[common:]
+
+		restNode := trieCacheNode[K]{
+			b0:         origSuffix[0],
+			b:          origSuffix,
+			children:   child.children,
+			terminal:   child.terminal,
+			valueIndex: child.valueIndex,
 		}
 
-		for len(keyBytes) > 0 {
-			idx, found := node.findChild(keyBytes[0])
+		child.b = child.b[:common]
+		child.terminal = false
 
-			if !found {
-				bCopy := make([]byte, len(keyBytes))
-				copy(bCopy, keyBytes)
-				newNode := trieCacheNode{
-					b0:         keyBytes[0],
-					b:          bCopy,
-					terminal:   true,
-					valueIndex: kv.addValue(value),
-				}
-				node.addChildAt(newNode, idx)
-				return
+		if len(newSuffix) == 0 {
+			child.terminal = true
+			child.valueIndex = kv.addValue(value)
+			child.children = []trieCacheNode[K]{restNode}
+		} else {
+			newNode := trieCacheNode[K]{
+				b0:         newSuffix[0],
+				b:          cloneKey(newSuffix),
+				terminal:   true,
+				valueIndex: kv.addValue(value),
 			}
-
-			child := &node.children[idx]
-			common := commonPrefixLen(child.b, keyBytes)
-
-			// We found exact match of the child node's segment.
-			if common == len(child.b) {
-				keyBytes = keyBytes[common:]
-				node = child
-				if len(keyBytes) == 0 {
-					if !node.terminal {
-						node.valueIndex = kv.addValue(value)
-						node.terminal = true
-					} else {
-						kv.values[node.valueIndex] = value
-					}
-					return
-				}
-				continue
-			}
-
-			// Split required.
-			origSuffix := child.b[common:]
-			newSuffix := keyBytes[common:]
-
-			restNode := trieCacheNode{
-				b0:         origSuffix[0],
-				b:          origSuffix,
-				children:   child.children,
-				terminal:   child.terminal,
-				valueIndex: child.valueIndex,
-			}
-
-			child.b = child.b[:common]
-			child.terminal = false
-
-			if len(newSuffix) == 0 {
-				child.terminal = true
-				child.valueIndex = kv.addValue(value)
-				child.children = []trieCacheNode{restNode}
+			if origSuffix[0] < newSuffix[0] {
+				child.children = []trieCacheNode[K]{restNode, newNode}
 			} else {
-				bCopy := make([]byte, len(newSuffix))
-				copy(bCopy, newSuffix)
-				newNode := trieCacheNode{
-					b0:         newSuffix[0],
-					b:          bCopy,
-					terminal:   true,
-					valueIndex: kv.addValue(value),
-				}
-				if origSuffix[0] < newSuffix[0] {
-					child.children = []trieCacheNode{restNode, newNode}
-				} else {
-					child.children = []trieCacheNode{newNode, restNode}
-				}
+				child.children = []trieCacheNode[K]{newNode, restNode}
 			}
-			return
 		}
+		return
 	}
 }
 
@@ -509,10 +398,10 @@ func (kv *KVCache[K, V]) deleteValueAtIndex(idx int) {
 	kv.freelist = append(kv.freelist, idx)
 }
 
-func (kv *KVCache[K, V]) delete(key string) error {
+func (kv *KVCache[K, V]) delete(key K) error {
 	type pathEntry struct {
-		node     *trieCacheNode
-		parent   *trieCacheNode
+		node     *trieCacheNode[K]
+		parent   *trieCacheNode[K]
 		childIdx int
 	}
 	var path []pathEntry
@@ -533,12 +422,12 @@ func (kv *KVCache[K, V]) delete(key string) error {
 
 					if len(pNode.children) == 0 && !pNode.terminal {
 						copy(pParent.children[childIdx:], pParent.children[childIdx+1:])
-						pParent.children[len(pParent.children)-1] = trieCacheNode{}
+						pParent.children[len(pParent.children)-1] = trieCacheNode[K]{}
 						pParent.children = pParent.children[:len(pParent.children)-1]
 					} else if len(pNode.children) == 1 && !pNode.terminal {
 						child := pNode.children[0]
 
-						pNode.b = append(pNode.b, child.b...)
+						pNode.b = concatKeys(pNode.b, child.b)
 						pNode.terminal = child.terminal
 						pNode.valueIndex = child.valueIndex
 						pNode.children = child.children
@@ -556,7 +445,7 @@ func (kv *KVCache[K, V]) delete(key string) error {
 		}
 
 		child := &node.children[idx]
-		common := commonPrefixLenStr(child.b, keyPart)
+		common := commonPrefixLenK(child.b, keyPart)
 
 		if common != len(child.b) {
 			return nil
@@ -573,7 +462,7 @@ func (kv *KVCache[K, V]) delete(key string) error {
 	}
 }
 
-func (kv *KVCache[K, V]) dfs(node *trieCacheNode) ([]V, error) {
+func (kv *KVCache[K, V]) dfs(node *trieCacheNode[K]) ([]V, error) {
 	var res []V
 
 	if node.terminal {
@@ -585,7 +474,7 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode) ([]V, error) {
 	}
 
 	type stackEntry struct {
-		node *trieCacheNode
+		node *trieCacheNode[K]
 	}
 
 	stack := make([]stackEntry, 0, maxKeyLength)
@@ -614,7 +503,7 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode) ([]V, error) {
 	return res, nil
 }
 
-func (n *trieCacheNode) findChild(c byte) (int, bool) {
+func (n *trieCacheNode[K]) findChild(c byte) (int, bool) {
 	for i := 0; i < len(n.children); i++ {
 		first := n.children[i].b0
 		if first == c {
@@ -627,18 +516,64 @@ func (n *trieCacheNode) findChild(c byte) (int, bool) {
 	return len(n.children), false
 }
 
-func (n *trieCacheNode) addChild(child trieCacheNode) {
+func (n *trieCacheNode[K]) addChild(child trieCacheNode[K]) {
 	idx, _ := n.findChild(child.b0)
 	n.addChildAt(child, idx)
 }
 
-func (n *trieCacheNode) addChildAt(child trieCacheNode, idx int) {
-	n.children = append(n.children, trieCacheNode{})
+func (n *trieCacheNode[K]) addChildAt(child trieCacheNode[K], idx int) {
+	n.children = append(n.children, trieCacheNode[K]{})
 	copy(n.children[idx+1:], n.children[idx:])
 	n.children[idx] = child
 }
 
-func commonPrefixLenStr(a []byte, b string) int {
+// --- Key type helper functions to support both string and []byte generically ---
+
+func cloneKey[K byteSlice](val K) K {
+	switch v := any(val).(type) {
+	case string:
+		return val
+	case []byte:
+		b := make([]byte, len(v))
+		copy(b, v)
+		return any(b).(K)
+	}
+	panic("unreachable")
+}
+
+func concatKeys[K byteSlice](a, b K) K {
+	switch any((*K)(nil)).(type) {
+	case *string:
+		s := any(a).(string) + any(b).(string)
+		return any(s).(K)
+	case *[]byte:
+		res := append(any(a).([]byte), any(b).([]byte)...)
+		return any(res).(K)
+	}
+	panic("unreachable")
+}
+
+func stringToKey[K byteSlice](s string) K {
+	switch any((*K)(nil)).(type) {
+	case *string:
+		return any(s).(K)
+	case *[]byte:
+		return any([]byte(s)).(K)
+	}
+	panic("unreachable")
+}
+
+func keyToString[K byteSlice](k K) string {
+	switch v := any(k).(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	}
+	panic("unreachable")
+}
+
+func commonPrefixLenK[K byteSlice](a, b K) int {
 	n := min(len(a), len(b))
 	for i := 0; i < n; i++ {
 		if a[i] != b[i] {
