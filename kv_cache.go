@@ -2,7 +2,6 @@ package geche
 
 import (
 	"iter"
-	"sort"
 	"sync"
 )
 
@@ -604,13 +603,16 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode) ([]V, error) {
 }
 
 func (n *trieCacheNode) findChild(c byte) (int, bool) {
-	idx := sort.Search(len(n.children), func(i int) bool {
-		return n.children[i].b[0] >= c
-	})
-	if idx < len(n.children) && n.children[idx].b[0] == c {
-		return idx, true
+	for i := 0; i < len(n.children); i++ {
+		first := n.children[i].b[0]
+		if first == c {
+			return i, true
+		}
+		if first > c {
+			return i, false
+		}
 	}
-	return idx, false
+	return len(n.children), false
 }
 
 func (n *trieCacheNode) addChild(child trieCacheNode) {
