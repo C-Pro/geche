@@ -633,10 +633,6 @@ func (n *trieCacheNode) addChild(child trieCacheNode) {
 }
 
 func (n *trieCacheNode) addChildAt(child trieCacheNode, idx int) {
-	if idx == len(n.children) {
-		n.children = append(n.children, child)
-		return
-	}
 	n.children = append(n.children, trieCacheNode{})
 	copy(n.children[idx+1:], n.children[idx:])
 	n.children[idx] = child
