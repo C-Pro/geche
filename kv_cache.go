@@ -115,6 +115,8 @@ func (kv *KVCache[K, V]) ListByPrefix(prefix string) ([]V, error) {
 			return nil, nil
 		}
 
+		// Taking the address of the child is safe here because we hold RLock
+		// and we don't modify the slice.
 		child := &node.children[idx]
 		common := commonPrefixLenK(child.b, searchKey)
 
@@ -338,6 +340,10 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			return
 		}
 
+		// We take the address of the child element in the slice.
+		// This pointer is stable as long as we don't resize 'node.children'.
+		// We only resize 'node.children' when adding a new child to 'node',
+		// which we don't do in this loop branch (we already found the child).
 		child := &node.children[idx]
 		common := commonPrefixLenK(child.b, searchKey)
 
@@ -346,6 +352,8 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			searchKey = searchKey[common:]
 			node = child
 			if len(searchKey) == 0 {
+				// We found the full key, update value if node is terminal,
+				// otherwise mark node as terminal and insert value.
 				if !node.terminal {
 					node.valueIndex = kv.addValue(value)
 					node.terminal = true
@@ -361,6 +369,8 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 		origSuffix := child.b[common:]
 		newSuffix := searchKey[common:]
 
+		// Create a node representing the rest of the original child.
+		// We copy the children slice from the original child.
 		restNode := trieCacheNode[K]{
 			b0:         origSuffix[0],
 			b:          origSuffix,
@@ -369,6 +379,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			valueIndex: child.valueIndex,
 		}
 
+		// Reset current child to be the branch.
 		child.b = child.b[:common]
 		child.terminal = false
 
@@ -383,6 +394,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 				terminal:   true,
 				valueIndex: kv.addValue(value),
 			}
+			// Pre-build 2-element child slice directly in sorted order.
 			if origSuffix[0] < newSuffix[0] {
 				child.children = []trieCacheNode[K]{restNode, newNode}
 			} else {
@@ -394,11 +406,15 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 }
 
 func (kv *KVCache[K, V]) deleteValueAtIndex(idx int) {
+	// Clear the value, so if it is a pointer or contains pointers,
+	// GC can collect the memory.
 	kv.values[idx] = kv.zero
+	// Add index to the freelist, so it can be reused.
 	kv.freelist = append(kv.freelist, idx)
 }
 
 func (kv *KVCache[K, V]) delete(key K) error {
+	// Track path for cleanup phase
 	type pathEntry struct {
 		node     *trieCacheNode[K]
 		parent   *trieCacheNode[K]
@@ -409,22 +425,28 @@ func (kv *KVCache[K, V]) delete(key K) error {
 	node := kv.trie
 	keyPart := key
 
+	// Navigate to the target node
 	for {
 		if len(keyPart) == 0 {
+			// Reached the target node
 			if node.terminal {
 				node.terminal = false
 				kv.deleteValueAtIndex(node.valueIndex)
 
+				// Phase 2: Cleanup - walk back and remove childless non-terminal nodes
 				for i := len(path) - 1; i >= 0; i-- {
 					pNode := path[i].node
 					pParent := path[i].parent
 					childIdx := path[i].childIdx
 
 					if len(pNode.children) == 0 && !pNode.terminal {
+						// Case 1: Delete empty non-terminal node
+						// Remove child from slice
 						copy(pParent.children[childIdx:], pParent.children[childIdx+1:])
 						pParent.children[len(pParent.children)-1] = trieCacheNode[K]{}
 						pParent.children = pParent.children[:len(pParent.children)-1]
 					} else if len(pNode.children) == 1 && !pNode.terminal {
+						// Case 2: Merge node with its single child
 						child := pNode.children[0]
 
 						pNode.b = concatKeys(pNode.b, child.b)
@@ -432,6 +454,7 @@ func (kv *KVCache[K, V]) delete(key K) error {
 						pNode.valueIndex = child.valueIndex
 						pNode.children = child.children
 					} else {
+						// Node is stable (has >1 children or is terminal), stop cleanup
 						break
 					}
 				}
@@ -441,6 +464,7 @@ func (kv *KVCache[K, V]) delete(key K) error {
 
 		idx, found := node.findChild(keyPart[0])
 		if !found {
+			// Key doesn't exist, nothing to delete
 			return nil
 		}
 
@@ -448,15 +472,18 @@ func (kv *KVCache[K, V]) delete(key K) error {
 		common := commonPrefixLenK(child.b, keyPart)
 
 		if common != len(child.b) {
+			// Partial match, key doesn't exist
 			return nil
 		}
 
+		// Record path for cleanup
 		path = append(path, pathEntry{
 			node:     child,
 			parent:   node,
 			childIdx: idx,
 		})
 
+		// Continue with remaining key
 		node = child
 		keyPart = keyPart[common:]
 	}
@@ -469,16 +496,19 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode[K]) ([]V, error) {
 		res = append(res, kv.values[node.valueIndex])
 	}
 
+	// If the node has no children, return early
 	if len(node.children) == 0 {
 		return res, nil
 	}
 
+	// Stack-based DFS to avoid recursion
 	type stackEntry struct {
 		node *trieCacheNode[K]
 	}
 
 	stack := make([]stackEntry, 0, maxKeyLength)
 
+	// Push all children of the starting node in reverse order
 	for i := len(node.children) - 1; i >= 0; i-- {
 		stack = append(stack, stackEntry{
 			node: &node.children[i],
@@ -486,6 +516,7 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode[K]) ([]V, error) {
 	}
 
 	for len(stack) > 0 {
+		// Pop from stack
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
@@ -493,6 +524,7 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode[K]) ([]V, error) {
 			res = append(res, kv.values[top.node.valueIndex])
 		}
 
+		// Push children in reverse order so they are processed in correct order
 		for i := len(top.node.children) - 1; i >= 0; i-- {
 			stack = append(stack, stackEntry{
 				node: &top.node.children[i],
@@ -504,6 +536,8 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode[K]) ([]V, error) {
 }
 
 func (n *trieCacheNode[K]) findChild(c byte) (int, bool) {
+	// A simple linear scan since the number of children at any trie node is typically tiny,
+	// making it faster than binary search (sort.Search) which incurs closure/call overhead.
 	for i := 0; i < len(n.children); i++ {
 		first := n.children[i].b0
 		if first == c {
@@ -529,6 +563,8 @@ func (n *trieCacheNode[K]) addChildAt(child trieCacheNode[K], idx int) {
 
 // --- Key type helper functions to support both string and []byte generically ---
 
+// cloneKey returns a copy of the key when K is []byte to prevent caller mutation,
+// but returns the same string directly when K is string since strings are immutable.
 func cloneKey[K byteSlice](val K) K {
 	switch v := any(val).(type) {
 	case string:
@@ -541,6 +577,7 @@ func cloneKey[K byteSlice](val K) K {
 	panic("unreachable")
 }
 
+// concatKeys merges two keys (representing path segment merge on delete).
 func concatKeys[K byteSlice](a, b K) K {
 	switch any((*K)(nil)).(type) {
 	case *string:
@@ -553,6 +590,7 @@ func concatKeys[K byteSlice](a, b K) K {
 	panic("unreachable")
 }
 
+// stringToKey converts a string to K (yielding zero allocation when K is string).
 func stringToKey[K byteSlice](s string) K {
 	switch any((*K)(nil)).(type) {
 	case *string:
@@ -563,6 +601,7 @@ func stringToKey[K byteSlice](s string) K {
 	panic("unreachable")
 }
 
+// keyToString converts K to a string representation.
 func keyToString[K byteSlice](k K) string {
 	switch v := any(k).(type) {
 	case string:
@@ -573,6 +612,7 @@ func keyToString[K byteSlice](k K) string {
 	panic("unreachable")
 }
 
+// commonPrefixLenK finds the prefix length of two key type values generic over string/[]byte.
 func commonPrefixLenK[K byteSlice](a, b K) int {
 	n := min(len(a), len(b))
 	for i := 0; i < n; i++ {
