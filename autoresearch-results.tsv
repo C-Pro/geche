@@ -4,3 +4,5 @@ iteration	commit	metric	delta	status	guard	description
 2	cbe7581	804.6	-197.4	keep	pass	Replace sort.Search with linear scan in findChild to optimize trie traversal
 3	0477524	800.2	-4.4	keep	pass	Optimize node splitting in insert by pre-building sorted children slices and avoiding addChild overhead
 4	-	803.0	2.8	discard	skip	Skip commonPrefixLen calls for single-byte child segments in all trie operations
+5	a2389fb	593.3	-206.9	keep	pass	Add b0 byte field to trieCacheNode to eliminate slice data pointer dereferences during key searches
+6	-	597.7	4.4	discard	skip	Optimize addChildAt to append directly when inserting at the end of the children slice
