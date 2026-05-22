@@ -15,7 +15,7 @@ Implementations are as simple as possible to be predictable in max latency, memo
 
 ## Examples
 
-Interface is quite simple with seven methods: `Set`, `Get`, `Del`, `SetIfPresent`, `Clear`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
+Interface is quite simple with eight methods: `Set`, `Get`, `Del`, `SetIfPresent`, `SetIfAbsent`, `Clear`, `Snapshot` and `Len`. Here's a quick example for a ring buffer holding 10k records.
 
 ```go
 package main
