@@ -15,13 +15,15 @@ type byteSlice interface {
 type trieCacheNode struct {
 	// b is the path segment this node represents.
 	b []byte
-	// terminal indicates if this node represents the end of a valid key.
-	terminal bool
 	// children is a list of child nodes, sorted by the first byte of their 'b' segment.
 	children []trieCacheNode
 	// index of the value in the values slice of the KVCache.
 	// Only valid if terminal is true.
 	valueIndex int
+	// b0 is the first byte of the path segment b.
+	b0 byte
+	// terminal indicates if this node represents the end of a valid key.
+	terminal bool
 }
 
 // KVCache is a container that stores the values ordered by their keys using a trie index.
@@ -353,6 +355,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 
 			if !found {
 				newNode := trieCacheNode{
+					b0:         keyStr[0],
 					b:          []byte(keyStr),
 					terminal:   true,
 					valueIndex: kv.addValue(value),
@@ -385,6 +388,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			newSuffix := keyStr[common:]
 
 			restNode := trieCacheNode{
+				b0:         origSuffix[0],
 				b:          origSuffix,
 				children:   child.children,
 				terminal:   child.terminal,
@@ -400,6 +404,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 				child.children = []trieCacheNode{restNode}
 			} else {
 				newNode := trieCacheNode{
+					b0:         newSuffix[0],
 					b:          []byte(newSuffix),
 					terminal:   true,
 					valueIndex: kv.addValue(value),
@@ -432,6 +437,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 				bCopy := make([]byte, len(keyBytes))
 				copy(bCopy, keyBytes)
 				newNode := trieCacheNode{
+					b0:         keyBytes[0],
 					b:          bCopy,
 					terminal:   true,
 					valueIndex: kv.addValue(value),
@@ -464,6 +470,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 			newSuffix := keyBytes[common:]
 
 			restNode := trieCacheNode{
+				b0:         origSuffix[0],
 				b:          origSuffix,
 				children:   child.children,
 				terminal:   child.terminal,
@@ -481,6 +488,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 				bCopy := make([]byte, len(newSuffix))
 				copy(bCopy, newSuffix)
 				newNode := trieCacheNode{
+					b0:         newSuffix[0],
 					b:          bCopy,
 					terminal:   true,
 					valueIndex: kv.addValue(value),
@@ -608,7 +616,7 @@ func (kv *KVCache[K, V]) dfs(node *trieCacheNode) ([]V, error) {
 
 func (n *trieCacheNode) findChild(c byte) (int, bool) {
 	for i := 0; i < len(n.children); i++ {
-		first := n.children[i].b[0]
+		first := n.children[i].b0
 		if first == c {
 			return i, true
 		}
@@ -620,7 +628,7 @@ func (n *trieCacheNode) findChild(c byte) (int, bool) {
 }
 
 func (n *trieCacheNode) addChild(child trieCacheNode) {
-	idx, _ := n.findChild(child.b[0])
+	idx, _ := n.findChild(child.b0)
 	n.addChildAt(child, idx)
 }
 
