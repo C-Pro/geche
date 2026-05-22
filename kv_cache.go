@@ -179,14 +179,11 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 					// The full path to `child` is `pathPrefix` + `child.b`.
 					path = append(pathPrefix, child.b...)
 					node = child
-					goto start_dfs
+					break
 				}
 			}
-			// This is for when the prefix matches a node path exactly
-			path = pathPrefix
 		}
 
-	start_dfs:
 		// 2. Stack-based DFS from the found node.
 		if node.terminal {
 			if !yield(string(path), kv.values[node.valueIndex]) {
@@ -250,6 +247,23 @@ func (kv *KVCache[K, V]) Snapshot() map[string]V {
 // Len returns the number of the values in the cache.
 func (kv *KVCache[K, V]) Len() int {
 	return max(0, len(kv.values)-len(kv.freelist))
+}
+
+// Clear removes all elements from the cache while preserving allocated capacities.
+func (kv *KVCache[K, V]) Clear() {
+	kv.mux.Lock()
+	defer kv.mux.Unlock()
+
+	clear(kv.values)
+	kv.values = kv.values[:0]
+
+	clear(kv.freelist)
+	kv.freelist = kv.freelist[:0]
+
+	clear(kv.trie.children)
+	kv.trie.children = kv.trie.children[:0]
+	kv.trie.terminal = false
+	kv.trie.valueIndex = 0
 }
 
 // --- Internal Trie Helpers ---
@@ -394,21 +408,6 @@ func (kv *KVCache[K, V]) deleteValueAtIndex(idx int) {
 func (kv *KVCache[K, V]) delete(key string) error {
 	keyBytes := []byte(key)
 
-	// Stack-based deletion to avoid recursion
-	type stackEntry struct {
-		node     *trieCacheNode
-		keyPart  []byte
-		childIdx int // index of child to check, -1 if not yet determined
-		parent   *trieCacheNode
-	}
-
-	stack := []stackEntry{{
-		node:     kv.trie,
-		keyPart:  keyBytes,
-		childIdx: -1,
-		parent:   nil,
-	}}
-
 	// Track path for cleanup phase
 	type pathEntry struct {
 		node     *trieCacheNode
@@ -417,37 +416,37 @@ func (kv *KVCache[K, V]) delete(key string) error {
 	}
 	var path []pathEntry
 
-	// Phase 1: Navigate to the target node
-	for len(stack) > 0 {
-		top := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
+	node := kv.trie
+	keyPart := keyBytes
 
-		if len(top.keyPart) == 0 {
+	// Navigate to the target node
+	for {
+		if len(keyPart) == 0 {
 			// Reached the target node
-			if top.node.terminal {
-				top.node.terminal = false
-				kv.deleteValueAtIndex(top.node.valueIndex)
+			if node.terminal {
+				node.terminal = false
+				kv.deleteValueAtIndex(node.valueIndex)
 
 				// Phase 2: Cleanup - walk back and remove childless non-terminal nodes
 				for i := len(path) - 1; i >= 0; i-- {
-					node := path[i].node
-					parent := path[i].parent
+					pNode := path[i].node
+					pParent := path[i].parent
 					childIdx := path[i].childIdx
 
-					if len(node.children) == 0 && !node.terminal {
+					if len(pNode.children) == 0 && !pNode.terminal {
 						// Case 1: Delete empty non-terminal node
 						// Remove child from slice
-						copy(parent.children[childIdx:], parent.children[childIdx+1:])
-						parent.children[len(parent.children)-1] = trieCacheNode{}
-						parent.children = parent.children[:len(parent.children)-1]
-					} else if len(node.children) == 1 && !node.terminal {
+						copy(pParent.children[childIdx:], pParent.children[childIdx+1:])
+						pParent.children[len(pParent.children)-1] = trieCacheNode{}
+						pParent.children = pParent.children[:len(pParent.children)-1]
+					} else if len(pNode.children) == 1 && !pNode.terminal {
 						// Case 2: Merge node with its single child
-						child := node.children[0]
+						child := pNode.children[0]
 
-						node.b = append(node.b, child.b...)
-						node.terminal = child.terminal
-						node.valueIndex = child.valueIndex
-						node.children = child.children
+						pNode.b = append(pNode.b, child.b...)
+						pNode.terminal = child.terminal
+						pNode.valueIndex = child.valueIndex
+						pNode.children = child.children
 					} else {
 						// Node is stable (has >1 children or is terminal), stop cleanup
 						break
@@ -457,14 +456,14 @@ func (kv *KVCache[K, V]) delete(key string) error {
 			return nil
 		}
 
-		idx, found := top.node.findChild(top.keyPart[0])
+		idx, found := node.findChild(keyPart[0])
 		if !found {
 			// Key doesn't exist, nothing to delete
 			return nil
 		}
 
-		child := &top.node.children[idx]
-		common := commonPrefixLen(child.b, top.keyPart)
+		child := &node.children[idx]
+		common := commonPrefixLen(child.b, keyPart)
 
 		if common != len(child.b) {
 			// Partial match, key doesn't exist
@@ -474,20 +473,14 @@ func (kv *KVCache[K, V]) delete(key string) error {
 		// Record path for cleanup
 		path = append(path, pathEntry{
 			node:     child,
-			parent:   top.node,
+			parent:   node,
 			childIdx: idx,
 		})
 
 		// Continue with remaining key
-		stack = append(stack, stackEntry{
-			node:     child,
-			keyPart:  top.keyPart[common:],
-			childIdx: -1,
-			parent:   top.node,
-		})
+		node = child
+		keyPart = keyPart[common:]
 	}
-
-	return nil
 }
 
 func (kv *KVCache[K, V]) dfs(node *trieCacheNode, currentPath []byte) ([]V, error) {

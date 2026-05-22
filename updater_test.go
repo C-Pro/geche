@@ -145,6 +145,46 @@ func TestUpdaterSetIfPresent(t *testing.T) {
 	}
 }
 
+func TestUpdaterSetIfAbsent(t *testing.T) {
+	u := NewCacheUpdater(
+		NewMapCache[string, string](),
+		updateFn,
+		2,
+	)
+
+	if u.Len() != 0 {
+		t.Errorf("expected length to be 0, but got %d", u.Len())
+	}
+
+	s, inserted := u.SetIfAbsent("test", "test")
+	if !inserted {
+		t.Error("expected to insert the value")
+	}
+
+	if s != "" {
+		t.Errorf("expected to get empty string, but got %q", s)
+	}
+
+	s, inserted = u.SetIfAbsent("test", "test2")
+	if inserted {
+		t.Error("expected to not insert the value")
+	}
+
+	if s != "test" {
+		t.Errorf("expected to get %q, but got %q", "test", s)
+	}
+
+	v, err := u.Get("test")
+	if err != nil {
+		t.Errorf("unexpected error in Get: %v", err)
+	}
+
+	if v != "test" {
+		t.Errorf("expected to get %q, but got %q", "test", v)
+	}
+}
+
+
 func TestUpdaterErr(t *testing.T) {
 	u := NewCacheUpdater[string, string](
 		NewMapCache[string, string](),

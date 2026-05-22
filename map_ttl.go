@@ -237,6 +237,16 @@ func (c *MapTTLCache[K, V]) Len() int {
 	return len(c.data)
 }
 
+// Clear removes all records from the cache.
+func (c *MapTTLCache[K, V]) Clear() {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	clear(c.data)
+	c.head = c.zero
+	c.tail = c.zero
+}
+
 func (c *MapTTLCache[K, V]) set(key K, value V) {
 	ts := c.now()
 	val := ttlRec[K, V]{

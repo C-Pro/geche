@@ -138,6 +138,18 @@ func (tx *Tx[K, V]) Len() int {
 	return tx.cache.Len()
 }
 
+// Clear removes all elements from the cache.
+// Will panic if called on RLocked Tx or unlocked Tx.
+func (tx *Tx[K, V]) Clear() {
+	if atomic.LoadInt32(&tx.unlocked) == 1 {
+		panic("cannot use unlocked transaction")
+	}
+	if !tx.writable {
+		panic("cannot clear in read-only transaction")
+	}
+	tx.cache.Clear()
+}
+
 type listerByPrefix[V any] interface {
 	ListByPrefix(prefix string) ([]V, error)
 }
