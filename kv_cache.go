@@ -3,6 +3,7 @@ package geche
 import (
 	"iter"
 	"sync"
+	"unsafe"
 )
 
 type byteSlice interface {
@@ -332,7 +333,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 		if !found {
 			newNode := trieCacheNode[K]{
 				b0:         searchKey[0],
-				b:          cloneKey(searchKey),
+				b:          searchKey,
 				terminal:   true,
 				valueIndex: kv.addValue(value),
 			}
@@ -390,7 +391,7 @@ func (kv *KVCache[K, V]) insert(key K, value V) {
 		} else {
 			newNode := trieCacheNode[K]{
 				b0:         newSuffix[0],
-				b:          cloneKey(newSuffix),
+				b:          newSuffix,
 				terminal:   true,
 				valueIndex: kv.addValue(value),
 			}
@@ -563,53 +564,26 @@ func (n *trieCacheNode[K]) addChildAt(child trieCacheNode[K], idx int) {
 
 // --- Key type helper functions to support both string and []byte generically ---
 
-// cloneKey returns a copy of the key when K is []byte to prevent caller mutation,
-// but returns the same string directly when K is string since strings are immutable.
-func cloneKey[K byteSlice](val K) K {
-	switch v := any(val).(type) {
-	case string:
-		return val
-	case []byte:
-		b := make([]byte, len(v))
-		copy(b, v)
-		return any(b).(K)
-	}
-	panic("unreachable")
-}
-
 // concatKeys merges two keys (representing path segment merge on delete).
 func concatKeys[K byteSlice](a, b K) K {
-	switch any((*K)(nil)).(type) {
-	case *string:
-		s := any(a).(string) + any(b).(string)
-		return any(s).(K)
-	case *[]byte:
-		res := append(any(a).([]byte), any(b).([]byte)...)
-		return any(res).(K)
-	}
-	panic("unreachable")
+	sa := *(*string)(unsafe.Pointer(&a))
+	sb := *(*string)(unsafe.Pointer(&b))
+	return stringToKey[K](sa + sb)
 }
 
 // stringToKey converts a string to K (yielding zero allocation when K is string).
-func stringToKey[K byteSlice](s string) K {
-	switch any((*K)(nil)).(type) {
-	case *string:
-		return any(s).(K)
-	case *[]byte:
-		return any([]byte(s)).(K)
+func stringToKey[K byteSlice](s string) (k K) {
+	if unsafe.Sizeof(k) == unsafe.Sizeof(s) {
+		*(*string)(unsafe.Pointer(&k)) = s
+	} else {
+		*(*[]byte)(unsafe.Pointer(&k)) = unsafe.Slice(unsafe.StringData(s), len(s))
 	}
-	panic("unreachable")
+	return k
 }
 
 // keyToString converts K to a string representation.
 func keyToString[K byteSlice](k K) string {
-	switch v := any(k).(type) {
-	case string:
-		return v
-	case []byte:
-		return string(v)
-	}
-	panic("unreachable")
+	return *(*string)(unsafe.Pointer(&k))
 }
 
 // commonPrefixLenK finds the prefix length of two key type values generic over string/[]byte.
