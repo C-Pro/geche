@@ -551,11 +551,6 @@ func (n *trieCacheNode[K]) findChild(c byte) (int, bool) {
 	return len(n.children), false
 }
 
-func (n *trieCacheNode[K]) addChild(child trieCacheNode[K]) {
-	idx, _ := n.findChild(child.b0)
-	n.addChildAt(child, idx)
-}
-
 func (n *trieCacheNode[K]) addChildAt(child trieCacheNode[K], idx int) {
 	n.children = append(n.children, trieCacheNode[K]{})
 	copy(n.children[idx+1:], n.children[idx:])
