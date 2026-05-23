@@ -1950,3 +1950,186 @@ func TestKVCache_DeleteEmpty(t *testing.T) {
 		t.Errorf("Expected ErrNotFound for 'a', got %v", err)
 	}
 }
+
+func TestKVCacheByteKeys(t *testing.T) {
+	cache := NewKVCache[[]byte, string]()
+
+	for i := 999; i >= 0; i-- {
+		key := []byte(fmt.Sprintf("%03d", i))
+		if string(key) == "008" {
+			cache.Set(key, string(key))
+		}
+		cache.Set(key, string(key))
+	}
+
+	expected := []string{
+		"000", "001", "002", "003", "004", "005", "006", "007", "008", "009",
+	}
+
+	got, err := cache.ListByPrefix("00")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+	compareSlice(t, expected, got)
+
+	expected = []string{
+		"120", "121", "122", "123", "124", "125", "126", "127", "128", "129",
+	}
+
+	got, err = cache.ListByPrefix("12")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+	compareSlice(t, expected, got)
+
+	expected = []string{"888"}
+
+	got, err = cache.ListByPrefix("888")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+	compareSlice(t, expected, got)
+
+	_ = cache.Del("777")
+	_ = cache.Del("779")
+
+	if _, err := cache.Get([]byte("777")); err != ErrNotFound {
+		t.Fatalf("expected error %v, got %v", ErrNotFound, err)
+	}
+
+	expected = []string{
+		"770", "771", "772", "773", "774", "775", "776", "778",
+	}
+
+	got, err = cache.ListByPrefix("77")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	cache.Set([]byte("777"), "777")
+	cache.Set([]byte("779"), "779")
+
+	compareSlice(t, expected, got)
+
+	expected = []string{
+		"770", "771", "772", "773", "774", "775", "776", "777", "778", "779",
+	}
+
+	got, err = cache.ListByPrefix("77")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+
+	compareSlice(t, expected, got)
+
+	cache.Set([]byte("77"), "77")
+
+	expected = []string{
+		"77", "770", "771", "772", "773", "774", "775", "776", "777", "778", "779",
+	}
+
+	got, err = cache.ListByPrefix("77")
+	if err != nil {
+		t.Fatalf("unexpected error in ListByPrefix: %v", err)
+	}
+	compareSlice(t, expected, got)
+
+	// Test SetIfPresent
+	old, ok := cache.SetIfPresent([]byte("77"), "77-new")
+	if !ok {
+		t.Fatalf("expected SetIfPresent to succeed")
+	}
+	if old != "77" {
+		t.Errorf("expected old value '77', got %s", old)
+	}
+	val, err := cache.Get([]byte("77"))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if val != "77-new" {
+		t.Errorf("expected value '77-new', got %s", val)
+	}
+
+	// Test SetIfAbsent
+	val, ok = cache.SetIfAbsent([]byte("77"), "77-new")
+	if ok {
+		t.Fatalf("expected SetIfAbsent to fail for existing key")
+	}
+	if val != "77-new" {
+		t.Errorf("expected existing value '77-new', got %s", val)
+	}
+
+	val, ok = cache.SetIfAbsent([]byte("88"), "88-absent")
+	if !ok {
+		t.Fatalf("expected SetIfAbsent to succeed for non-existing key")
+	}
+	if val != "" {
+		t.Errorf("expected returned value '', got %s", val)
+	}
+
+	// Test Snapshot and AllByPrefix
+	snap := cache.Snapshot()
+	if snap["88"] != "88-absent" {
+		t.Errorf("expected '88-absent' in snapshot, got %s", snap["88"])
+	}
+}
+
+func TestKVCacheByteKeys_Monkey(t *testing.T) {
+	seeds := []int64{0, 1, 42, 123, 1994, 2026}
+	prefixes := []string{"", "a", "b", "c", "ab", "abc"}
+
+	for _, seed := range seeds {
+		for _, prefix := range prefixes {
+			cache := NewKVCache[[]byte, string]()
+			task := randTask(seed)
+			golden := make(map[string]struct{}, len(task))
+			for _, cmd := range task {
+				switch cmd.action {
+				case "Set":
+					cache.Set([]byte(cmd.key), cmd.key)
+					golden[cmd.key] = struct{}{}
+				case "Del":
+					_ = cache.Del(cmd.key)
+					delete(golden, cmd.key)
+				case "Clear":
+					cache.Clear()
+					clear(golden)
+				}
+			}
+
+			goldenFiltered := make([]string, 0, len(golden))
+			for k := range golden {
+				if strings.HasPrefix(k, prefix) {
+					goldenFiltered = append(goldenFiltered, k)
+				}
+			}
+			sort.Strings(goldenFiltered)
+
+			var gotValues []string
+			var gotKeys []string
+			seq := cache.AllByPrefix(prefix)
+			seq(func(k, v string) bool {
+				gotKeys = append(gotKeys, k)
+				gotValues = append(gotValues, v)
+				return true
+			})
+
+			if cache.Len() != len(golden) {
+				t.Errorf("seed %d, prefix %q: expected len %d, got %d", seed, prefix, len(golden), cache.Len())
+			}
+
+			for _, key := range goldenFiltered {
+				val, err := cache.Get([]byte(key))
+				if err != nil {
+					t.Fatalf("seed %d, prefix %q: unexpected error in Get for %q: %v", seed, prefix, key, err)
+				}
+				if val != key {
+					t.Errorf("seed %d, prefix %q: expected %q, got %q", seed, prefix, key, val)
+				}
+			}
+
+			compareSlice(t, goldenFiltered, gotValues)
+			compareSlice(t, goldenFiltered, gotKeys)
+		}
+	}
+}
