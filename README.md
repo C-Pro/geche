@@ -48,9 +48,6 @@ func main() {
 
 	// will not have any effect
 	c.SetIfPresent(2, "dua")
-
-	// will print 1
-    fmt.Println(v)
 }
 ```
 
