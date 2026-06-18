@@ -229,9 +229,8 @@ func (kv *KVCache[K, V]) AllByPrefix(prefix string) iter.Seq2[string, V] {
 // Snapshot returns a copy of the cache.
 func (kv *KVCache[K, V]) Snapshot() map[string]V {
 	kv.mux.RLock()
-	defer kv.mux.RUnlock()
-
 	res := make(map[string]V, kv.len())
+	kv.mux.RUnlock()
 
 	seq := kv.AllByPrefix("")
 	seq(func(k string, v V) bool {
