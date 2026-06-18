@@ -265,13 +265,13 @@ func TestCommon(t *testing.T) {
 		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
 		{"MapTTLCache", func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Minute, time.Minute) }},
 		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](100) }},
-		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
+		{"KVMapCache", func() Geche[string, string] { return NewKV(NewMapCache[string, string]()) }},
 		{"LockerMapCache", func() Geche[string, string] {
-			return NewLocker[string, string](NewMapCache[string, string]()).Lock()
+			return NewLocker(NewMapCache[string, string]()).Lock()
 		}},
 		{
 			"ShardedMapCache", func() Geche[string, string] {
-				return NewSharded[string](
+				return NewSharded(
 					func() Geche[string, string] { return NewMapCache[string, string]() },
 					0,
 					&StringMapper{},
@@ -280,7 +280,7 @@ func TestCommon(t *testing.T) {
 		},
 		{
 			"ShardedMapTTLCache", func() Geche[string, string] {
-				return NewSharded[string](
+				return NewSharded(
 					func() Geche[string, string] { return NewMapTTLCache[string, string](ctx, time.Second, time.Second) },
 					0,
 					&StringMapper{},
@@ -289,7 +289,7 @@ func TestCommon(t *testing.T) {
 		},
 		{
 			"ShardedRingBuffer", func() Geche[string, string] {
-				return NewSharded[string](
+				return NewSharded(
 					func() Geche[string, string] { return NewRingBuffer[string, string](100) },
 					0,
 					&StringMapper{},
@@ -298,11 +298,11 @@ func TestCommon(t *testing.T) {
 		},
 		{"KVCache", func() Geche[string, string] { return NewKVCache[string, string]() }},
 		{"LockerKVCache", func() Geche[string, string] {
-			return NewLocker[string, string](NewKVCache[string, string]()).Lock()
+			return NewLocker(NewKVCache[string, string]()).Lock()
 		}},
 		{
 			"ShardedKVCache", func() Geche[string, string] {
-				return NewSharded[string](
+				return NewSharded(
 					func() Geche[string, string] { return NewKVCache[string, string]() },
 					0,
 					&StringMapper{},
@@ -353,11 +353,11 @@ func TestConcurrentFuzz(t *testing.T) {
 		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
 		{"KVCache", func() Geche[string, string] { return NewKVCache[string, string]() }},
 		{"LockerMapCache", func() Geche[string, string] {
-			return NewLocker[string, string](NewMapCache[string, string]()).Lock()
+			return NewLocker(NewMapCache[string, string]()).Lock()
 		}},
 		{
 			"ShardedMapCache", func() Geche[string, string] {
-				return NewSharded[string](
+				return NewSharded(
 					func() Geche[string, string] { return NewMapCache[string, string]() },
 					numWorkers,
 					&StringMapper{},
@@ -382,6 +382,116 @@ func TestConcurrentFuzz(t *testing.T) {
 							imp.Set(tc.key, "value")
 						case OPDel:
 							_ = imp.Del(tc.key)
+						}
+					}
+				}()
+			}
+
+			wg.Wait()
+		})
+	}
+}
+
+// TestConcurrentSnapshot exercises Snapshot concurrently with writers (Set/Del)
+// for every cache type. It guards against deadlocks (e.g. recursive RLock) and,
+// via the race detector, against Snapshot returning a map that is shared with
+// (and mutated by) the cache internals. Run with -race to get full coverage.
+func TestConcurrentSnapshot(t *testing.T) {
+	testData := genTestData(10000)
+	numWriters := 8
+	numSnapshotters := 4
+	numIterations := 5000
+
+	caches := []struct {
+		name    string
+		factory func() Geche[string, string]
+	}{
+		{"MapCache", func() Geche[string, string] { return NewMapCache[string, string]() }},
+		{"MapTTLCache", func() Geche[string, string] {
+			return NewMapTTLCache[string, string](t.Context(), time.Millisecond*10, time.Millisecond*50)
+		}},
+		{"RingBuffer", func() Geche[string, string] { return NewRingBuffer[string, string](1000) }},
+		{"KVMapCache", func() Geche[string, string] { return NewKV[string](NewMapCache[string, string]()) }},
+		{"KVCache", func() Geche[string, string] { return NewKVCache[string, string]() }},
+		{"LockerMapCache", func() Geche[string, string] {
+			return NewLocker(NewMapCache[string, string]()).Lock()
+		}},
+		{"LockerKVCache", func() Geche[string, string] {
+			return NewLocker(NewKVCache[string, string]()).Lock()
+		}},
+		{
+			"ShardedMapCache", func() Geche[string, string] {
+				return NewSharded(
+					func() Geche[string, string] { return NewMapCache[string, string]() },
+					numWriters,
+					&StringMapper{},
+				)
+			},
+		},
+		{
+			"ShardedMapTTLCache", func() Geche[string, string] {
+				return NewSharded(
+					func() Geche[string, string] {
+						return NewMapTTLCache[string, string](t.Context(), time.Millisecond*10, time.Millisecond*50)
+					},
+					numWriters,
+					&StringMapper{},
+				)
+			},
+		},
+		{
+			"ShardedRingBuffer", func() Geche[string, string] {
+				return NewSharded(
+					func() Geche[string, string] { return NewRingBuffer[string, string](1000) },
+					numWriters,
+					&StringMapper{},
+				)
+			},
+		},
+		{
+			"ShardedKVCache", func() Geche[string, string] {
+				return NewSharded(
+					func() Geche[string, string] { return NewKVCache[string, string]() },
+					numWriters,
+					&StringMapper{},
+				)
+			},
+		},
+	}
+
+	for _, ci := range caches {
+		t.Run(ci.name, func(t *testing.T) {
+			imp := ci.factory()
+			var wg sync.WaitGroup
+
+			// Writers: concurrently Set and Del.
+			for range numWriters {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					r := rand.New(rand.NewSource(time.Now().UnixNano()))
+					for i := 0; i < numIterations; i++ {
+						tc := testData[r.Intn(len(testData))]
+						if r.Intn(2) == 0 {
+							imp.Set(tc.key, "value")
+						} else {
+							_ = imp.Del(tc.key)
+						}
+					}
+				}()
+			}
+
+			// Snapshotters: concurrently Snapshot and read the returned map.
+			// Iterating the result would race with the cache if Snapshot did
+			// not return an independent copy.
+			for range numSnapshotters {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for i := 0; i < numIterations; i++ {
+						snap := imp.Snapshot()
+						for k, v := range snap {
+							_, _ = k, v
 						}
 					}
 				}()
